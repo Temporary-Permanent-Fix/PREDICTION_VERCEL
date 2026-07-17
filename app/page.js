@@ -250,7 +250,9 @@ function TabPredikcia({ D, uda }) {
   const [datum, setDatum] = useState(today());
   const [horizon, setHorizon] = useState(14);
   const { model, prof, daily } = D;
-  const pred = predictDay(datum, model, uda);
+  const jePast = datum <= model.lastDate;
+  const pred = jePast ? expectedFor(datum, model, uda) : predictDay(datum, model, uda);
+  const skut = jePast ? daily.find((r) => r.datum === datum)?.jbl : undefined;
   const s = model.residStd;
   const ev = eventMult(datum, uda);
   const p = prof[String(dow(datum) >= 5)];
@@ -262,8 +264,10 @@ function TabPredikcia({ D, uda }) {
         <div className="fld"><label>Horizont: {horizon} dní</label><input type="range" min="7" max="28" value={horizon} onChange={(e) => setHorizon(+e.target.value)} /></div>
       </div>
       <div className="grid g4">
-        <Card lbl={`Predikcia na ${fmtD(datum)} (${DNI[dow(datum)]})`} val={`${nf.format(pred)}`} cls="accent"
-          sub={`80 % interval: ${nf.format(pred * (1 - 1.28 * s))} – ${nf.format(pred * (1 + 1.28 * s))}`} />
+        <Card lbl={`${jePast ? "Očakávané (spätne)" : "Predikcia"} na ${fmtD(datum)} (${DNI[dow(datum)]})`} val={`${nf.format(pred)}`} cls="accent"
+          sub={jePast
+            ? (skut != null ? `skutočnosť: ${nf.format(skut)} · odchýlka ${((skut / pred - 1) * 100).toFixed(1)} %` : "skutočnosť pre tento deň nie je v dátach")
+            : `80 % interval: ${nf.format(pred * (1 - 1.28 * s))} – ${nf.format(pred * (1 + 1.28 * s))}`} />
         <Card lbl="Faktor dňa v týždni" val={model.dowF[dow(datum)].toFixed(2)} sub={`deň v mesiaci: ${model.domF[new Date(datum).getUTCDate()].toFixed(2)}`} />
         <Card lbl="Udalosti" val={`×${ev.toFixed(2)}`} cls={ev === 1 ? "" : "warn"} sub={ev === 1 ? "žiadna aktívna udalosť" : "aktívna udalosť upravuje predikciu"} />
         <Card lbl="Denná úroveň modelu" val={nf.format(model.levelNow)} sub={`trend ${model.slope >= 0 ? "+" : ""}${nf.format(model.slope)}/deň, tlmený`} />
@@ -304,7 +308,7 @@ function TabPredikcia({ D, uda }) {
 function TabZvoz({ V, staticData, uda }) {
   const [datum, setDatum] = useState(today());
   const actual = useMemo(() => new Map(V.daily.map((r) => [r.datum, r.jbl])), [V.daily]);
-  const vznikyOf = (d) => actual.get(d) ?? predictDay(d, V.model, uda);
+  const vznikyOf = (d) => actual.get(d) ?? expectedFor(d, V.model, uda);
   const z = predictZvoz(datum, staticData.matica, V.prof, vznikyOf);
   const days = [0, 1, 2, 3].map((k) => addDays(datum, -k));
   return (
@@ -753,8 +757,8 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save }) {
   const setV = (p, val) => setVykony({ ...vyk, [p]: val });
 
   const objemAuto = (p) => {
-    if (p === "Príjem") return predictDay(datum, TP.prijem.model, uda);
-    return predictDay(datum, TP.triedenie.model, uda) * (pomery[p] ?? 1);
+    if (p === "Príjem") return expectedFor(datum, TP.prijem.model, uda);
+    return expectedFor(datum, TP.triedenie.model, uda) * (pomery[p] ?? 1);
   };
   const objem = (p) => (override[p] !== undefined && override[p] !== "" ? +override[p] : objemAuto(p));
   const hodiny = (p) => (+vyk[p] > 0 ? objem(p) / +vyk[p] : null);
