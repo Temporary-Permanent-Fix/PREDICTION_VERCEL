@@ -4,7 +4,7 @@ import { parseCSV, toCSV } from "../lib/csv";
 import {
   TYPY_VYNIMIEK, TYPY_UDALOSTI, buildDaily, mergedHourly, fitModel, predictDay,
   expectedFor, hourlyProfile, eventMult, intraday, cumProfile, predictZvoz,
-  addDays, dow, DNI, fmtD, iso,
+  addDays, dow, DNI, fmtD, iso, opShift, OP_HOURS, OP_START, dropIncompleteLastOpDay,
 } from "../lib/model";
 
 const nf = new Intl.NumberFormat("sk-SK", { maximumFractionDigits: 0 });
@@ -94,16 +94,30 @@ export default function Page() {
   const [vynimky, setVynimky] = useState([]);
   const [udalosti, setUdalosti] = useState([]);
   const [priebeh, setPriebeh] = useState([]);
+  const [kpi, setKpi] = useState([]);
   const [ghOk, setGhOk] = useState(null);
 
   useEffect(() => {
     (async () => {
-      const [vz, tr, mt] = await Promise.all([
+      const [vz, tr, pr, mt] = await Promise.all([
         fetch("/data/vzniky_hodinove.csv").then((r) => r.text()),
         fetch("/data/baseline_hodinove.csv").then((r) => r.text()),
+        fetch("/data/prijem_hodinove.csv").then((r) => r.text()).catch(() => ""),
         fetch("/data/zvoz_matica.json").then((r) => r.json()),
       ]);
-      setStaticData({ vzniky: parseCSV(vz), triedenie: parseCSV(tr), matica: mt.matica, zvozProfil: mt.zvozProfil });
+      const [kvD, kvH, pom] = await Promise.all([
+        fetch("/data/kvalita_denne.csv").then((r) => r.text()).catch(() => ""),
+        fetch("/data/kvalita_hodiny.json").then((r) => r.json()).catch(() => null),
+        fetch("/data/procesy_pomery.json").then((r) => r.json()).catch(() => null),
+      ]);
+      setStaticData({
+        vzniky: dropIncompleteLastOpDay(opShift(parseCSV(vz))),
+        triedenie: dropIncompleteLastOpDay(opShift(parseCSV(tr))),
+        prijem: dropIncompleteLastOpDay(opShift(parseCSV(pr))),
+        matica: mt.matica, zvozProfil: mt.zvozProfil,
+        kvalitaDenne: parseCSV(kvD), kvalitaHodiny: kvH,
+        pomery: pom ? pom.pomery_vs_sorted : { Sort: 1, Pick: 1, Pack: 1 },
+      });
       const loadMut = async (file, setter) => {
         try {
           const r = await fetch(`/api/gh?file=${file}`, { cache: "no-store" });
@@ -117,6 +131,7 @@ export default function Page() {
       loadMut("vynimky.csv", setVynimky);
       loadMut("udalosti.csv", setUdalosti);
       loadMut("priebeh.csv", setPriebeh);
+      loadMut("kpi.csv", setKpi);
     })();
   }, []);
 
@@ -156,7 +171,18 @@ export default function Page() {
     return { daily, model: fitModel(daily, vynD, udalosti), prof: hourlyProfile(mergedHourly(staticData.vzniky, zazSrc), vynD) };
   }, [staticData, zaznamy, vynimky, udalosti]);
 
-  if (!D || !V) return <div className="shell"><div className="note">Načítavam dáta…</div></div>;
+  const TP = useMemo(() => {
+    if (!staticData) return null;
+    const mk = (key) => {
+      const zazS = zaznamy.filter((z) => (z.zdroj || "triedenie") === key);
+      const daily = buildDaily(staticData[key], zazS);
+      const vynD = vynimky.map((v) => v.datum);
+      return { daily, model: fitModel(daily, vynD, udalosti), prof: hourlyProfile(mergedHourly(staticData[key], zazS), vynD) };
+    };
+    return { triedenie: mk("triedenie"), prijem: mk("prijem") };
+  }, [staticData, zaznamy, vynimky, udalosti]);
+
+  if (!D || !V || !TP) return <div className="shell"><div className="note">Načítavam dáta…</div></div>;
   const { model, prof } = D;
   const uda = udalosti;
 
@@ -166,7 +192,8 @@ export default function Page() {
       <div className="masthead">
         <h1>JBL PREDIKCIA <span className="tag">SKLC3 · AutoStore</span></h1>
         <div className="statusline">
-          <span>zdroj <b>{src === "vzniky" ? "vzniky (objednávky)" : "triedenie (expedícia)"}</b></span>
+          <span>zdroj <b>{{ vzniky: "vzniky (objednávky)", triedenie: "triedenie (expedícia)", prijem: "príjem (received)" }[src]}</b></span>
+          <span>deň <b>06:00–06:00</b></span>
           <span>tréning <b>{model.trainDays} dní</b></span>
           <span>posledné dáta <b>{fmtD(model.lastDate)}{model.lastDate.slice(0, 4)}</b></span>
           <span>úroveň <b>{nf.format(model.levelNow)}</b> JBL/deň</span>
@@ -176,13 +203,15 @@ export default function Page() {
         <div className="srcswitch" role="tablist" aria-label="Zdroj dát">
           <button className={src === "vzniky" ? "on" : ""} onClick={() => setSrc("vzniky")}>🛒 Vzniky</button>
           <button className={src === "triedenie" ? "on" : ""} onClick={() => setSrc("triedenie")}>📦 Triedenie</button>
+          <button className={src === "prijem" ? "on" : ""} onClick={() => setSrc("prijem")}>📥 Príjem</button>
         </div>
+        {src === "prijem" && <div className="note" style={{ marginTop: 8 }}>📥 Príjem je riadený harmonogramom dodávok, nie zákazníckym dopytom – predikcia je orientačná (typická odchýlka ±20–40 %). Presnejší odhad by dali avíza dodávok.</div>}
         {ghOk === false && <div className="note" style={{ marginTop: 8 }}>⚠️ GitHub zápis nie je nakonfigurovaný (env GH_TOKEN / GH_REPO) – zmeny platia len do obnovenia stránky.</div>}
       </div>
 
       <div className="tabs">
         {[["pred", "🔮 Predikcia"], ["zvoz", "🚚 Zvozy"], ["prepocet", "🔄 Prepočet predikcie"],
-          ["vstup", "➕ Zadávanie dát"], ["anom", "⚠️ Anomálie"], ["udal", "📅 Udalosti"], ["model", "🧠 Model"]]
+          ["vstup", "➕ Zadávanie dát"], ["anom", "⚠️ Anomálie"], ["udal", "📅 Udalosti"], ["kvalita", "✅ Kvalita"], ["kpi", "🧮 KPI"], ["model", "🧠 Model"]]
           .map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}
       </div>
 
@@ -192,6 +221,8 @@ export default function Page() {
       {tab === "vstup" && <TabVstup src={src} zaznamy={zaznamy} setZaznamy={setZaznamy} vynimky={vynimky} setVynimky={setVynimky} save={save} />}
       {tab === "anom" && <TabAnomalie D={D} uda={uda} vynimky={vynimky} setVynimky={setVynimky} save={save} />}
       {tab === "udal" && <TabUdalosti D={D} uda={uda} setUdalosti={setUdalosti} save={save} />}
+      {tab === "kvalita" && <TabKvalita staticData={staticData} />}
+      {tab === "kpi" && <TabKPI TP={TP} uda={uda} pomery={staticData.pomery} kpi={kpi} setKpi={setKpi} save={save} />}
       {tab === "model" && <TabModel D={D} />}
 
       {toast && <div className={`toast ${toast.err ? "err" : ""}`}>{toast.msg}</div>}
@@ -225,7 +256,8 @@ function TabPredikcia({ D, uda }) {
 
       <div className="section">
         <h3>Hodinová predikcia · {fmtD(datum)}</h3>
-        <div className="chartbox"><Bars data={p.map((v, h) => ({ x: String(h).padStart(2, "0"), y: pred * v }))} /></div>
+        <div className="chartbox"><Bars data={OP_HOURS.map((h) => ({ x: String(h).padStart(2, "0"), y: pred * p[h] }))} /></div>
+        <p className="note">Prevádzkový deň {String(OP_START).padStart(2, "0")}:00 – {String(OP_START).padStart(2, "0")}:00 nasledujúceho dňa.</p>
       </div>
 
       <div className="section">
@@ -282,7 +314,7 @@ function TabZvoz({ V, staticData, uda }) {
       <div className="section">
         <h3>Hodinový profil zvozov · {fmtD(datum)}</h3>
         <div className="chartbox">
-          <Bars color="var(--blue)" data={staticData.zvozProfil.map((v, h) => ({ x: String(h).padStart(2, "0"), y: z.total * v }))} />
+          <Bars color="var(--blue)" data={OP_HOURS.map((h) => ({ x: String(h).padStart(2, "0"), y: z.total * staticData.zvozProfil[h] }))} />
         </div>
         <p className="note">Zvozy odchádzajú prevažne v noci (špička 2:00–5:00) – profil z posledných 60 dní zvozov.</p>
       </div>
@@ -330,7 +362,7 @@ function TabPrepocet({ D, uda, src, priebeh, save, setPriebeh }) {
         <div className="fld"><label>Dátum</label><input type="date" value={datum} onChange={(e) => setDatum(e.target.value)} /></div>
         <div className="fld"><label>Stav do hodiny</label>
           <select value={H} onChange={(e) => setH(+e.target.value)}>
-            {Array.from({ length: 24 }, (_, i) => i + 1).map((h) => <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>)}
+            {Array.from({ length: 24 }, (_, i) => (OP_START + i + 1) % 24).map((h) => <option key={h} value={h}>{String(h).padStart(2, "0")}:00{h <= OP_START ? " (+1 deň)" : ""}</option>)}
           </select></div>
         <div className="fld"><label>Vzniknuté JBL do hodiny</label><input type="number" min="0" step="100" value={vznik || ""} onChange={(e) => setVznik(+e.target.value || 0)} /></div>
         <div className="fld"><label>Vypikované JBL (voliteľné)</label><input type="number" min="0" step="100" value={pick || ""} onChange={(e) => setPick(+e.target.value || 0)} /></div>
@@ -361,9 +393,9 @@ function TabPrepocet({ D, uda, src, priebeh, save, setPriebeh }) {
             <h3>Projekcia kumulatívnej krivky dňa</h3>
             <div className="chartbox">
               <div className="legend"><span><i style={{ background: "var(--muted)" }} />projekcia z porovnávacích dní</span><span><i style={{ background: "var(--green)" }} />dnešný zadaný stav</span></div>
-              <Lines xLabels={Array.from({ length: 24 }, (_, h) => String(h + 1).padStart(2, "0"))} series={[
+              <Lines xLabels={Array.from({ length: 24 }, (_, i) => String((OP_START + i + 1) % 24).padStart(2, "0"))} series={[
                 { color: "var(--muted)", points: cp.map((v) => v * r.eod) },
-                { color: "var(--green)", dots: true, points: Array.from({ length: 24 }, (_, i) => (i + 1 === H ? vznik : null)) },
+                { color: "var(--green)", dots: true, points: Array.from({ length: 24 }, (_, i) => ((OP_START + i + 1) % 24 === H ? vznik : null)) },
               ]} />
             </div>
           </div>
@@ -397,12 +429,24 @@ function TabVstup({ src, zaznamy, setZaznamy, vynimky, setVynimky, save }) {
   const [datum, setDatum] = useState(addDays(today(), -1));
   const [total, setTotal] = useState(0);
   const [anom, setAnom] = useState("Žiadna");
+  const [poHodinach, setPoHodinach] = useState(false);
+  const [hodiny, setHodiny] = useState(Array(24).fill(""));
   const zazSrc = zaznamy.filter((z) => (z.zdroj || "triedenie") === src);
   const COLS = ["datum", "hodina", "joblines", "poznamka", "zdroj"];
+  const sumHodin = hodiny.reduce((a, v) => a + (+v || 0), 0);
 
   const uloz = () => {
     const rest = zaznamy.filter((z) => !(z.datum === datum && (z.zdroj || "triedenie") === src));
-    const rows = [...rest, { datum, hodina: "", joblines: total, poznamka: anom !== "Žiadna" ? anom : "", zdroj: src }];
+    const pozn = anom !== "Žiadna" ? anom : "";
+    let rows;
+    if (poHodinach && sumHodin > 0) {
+      // hodiny v prevádzkovom poradí 06..05 -> reálna hodina; zápis pod prevádzkový deň
+      rows = [...rest, ...OP_HOURS.map((h, i) => ({
+        datum, hodina: h, joblines: +hodiny[i] || 0, poznamka: pozn, zdroj: src,
+      })).filter((r) => r.joblines > 0)];
+    } else {
+      rows = [...rest, { datum, hodina: "", joblines: total, poznamka: pozn, zdroj: src }];
+    }
     save("zaznamy.csv", rows, COLS, `data: záznam JBL ${datum} (${src})`, setZaznamy);
     if (anom !== "Žiadna") {
       const vrest = vynimky.filter((v) => v.datum !== datum);
@@ -421,13 +465,32 @@ function TabVstup({ src, zaznamy, setZaznamy, vynimky, setVynimky, save }) {
         Ak deň sprevádzala anomália, označ ju – deň sa vylúči z tréningu modelu.</p>
       <div className="frm">
         <div className="fld"><label>Dátum</label><input type="date" value={datum} onChange={(e) => setDatum(e.target.value)} /></div>
-        <div className="fld"><label>Joblines spolu (deň)</label><input type="number" min="0" step="100" value={total || ""} onChange={(e) => setTotal(+e.target.value || 0)} /></div>
+        <div className="fld"><label>Joblines spolu (deň)</label>
+          <input type="number" min="0" step="100" value={poHodinach ? sumHodin : (total || "")} disabled={poHodinach}
+            onChange={(e) => setTotal(+e.target.value || 0)} /></div>
         <div className="fld"><label>Anomália (voliteľné)</label>
           <select value={anom} onChange={(e) => setAnom(e.target.value)}>
             <option>Žiadna</option>{TYPY_VYNIMIEK.map((t) => <option key={t}>{t}</option>)}
           </select></div>
-        <button className="btn" disabled={!total} onClick={uloz}>💾 Uložiť záznam</button>
+        <button className="btn" disabled={poHodinach ? sumHodin === 0 : !total} onClick={uloz}>💾 Uložiť záznam</button>
       </div>
+      <div className="frm" style={{ marginTop: 10 }}>
+        <label style={{ fontSize: 13, color: "var(--muted)", display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+          <input type="checkbox" checked={poHodinach} onChange={(e) => setPoHodinach(e.target.checked)} />
+          Zadať po hodinách (prevádzkový deň 06:00 → 05:00)
+        </label>
+      </div>
+      {poHodinach && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(92px, 1fr))", gap: 6, marginTop: 8 }}>
+          {OP_HOURS.map((h, i) => (
+            <div className="fld" key={h}>
+              <label>{String(h).padStart(2, "0")}:00{h < OP_START ? " (+1)" : ""}</label>
+              <input type="number" min="0" style={{ minWidth: 0 }} value={hodiny[i]}
+                onChange={(e) => setHodiny(hodiny.map((v, j) => (j === i ? e.target.value : v)))} />
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="section">
         <h3>Zadané záznamy · {src} ({new Set(zazSrc.map((z) => z.datum)).size} dní)</h3>
@@ -582,6 +645,168 @@ function TabUdalosti({ D, uda, setUdalosti, save }) {
   );
 }
 
+// ------------------------------------------------------------ ✅ Kvalita
+function TabKvalita({ staticData }) {
+  const rows = staticData.kvalitaDenne || [];
+  const hod = staticData.kvalitaHodiny;
+  const procesy = [...new Set(rows.map((r) => r.proces))].sort();
+  const [proces, setProces] = useState(procesy[0] || "");
+  const [range, setRange] = useState(30);
+  if (!rows.length) return <p className="note">Chýba súbor `kvalita_denne.csv` – vygeneruj ho cez `tools/quality_to_data.py`.</p>;
+
+  const kv = (r) => (1 - (+r.pozde || 0) / (+r.celkem || 1)) * 100;
+  const dni = [...new Set(rows.map((r) => r.datum))].sort();
+  const lastDay = dni[dni.length - 1];
+  const byProc = (p) => rows.filter((r) => r.proces === p);
+  const med = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? (s.length % 2 ? s[s.length >> 1] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : 0; };
+  const qClass = (v) => (v >= 97 ? "accent" : v >= 92 ? "warn" : "bad");
+
+  const sel = byProc(proces).slice(-range);
+  const worst = [...byProc(proces)].slice(-range).sort((a, b) => kv(a) - kv(b)).slice(0, 8);
+
+  return (
+    <>
+      <p className="note">Kvalita = podiel jobline dokončených v limite, po prevádzkových dňoch 06:00–06:00 (zdroj QUALITY export).</p>
+      <div className="grid g4">
+        {procesy.map((p) => {
+          const d = byProc(p);
+          const last = d.find((r) => r.datum === lastDay);
+          const v = last ? kv(last) : null;
+          const m7 = med(d.slice(-8, -1).map(kv));
+          return (
+            <div key={p} className="card" onClick={() => setProces(p)} style={{ cursor: "pointer", outline: p === proces ? "1px solid var(--green)" : "none" }}>
+              <div className="lbl">{p}</div>
+              <div className={`val ${v != null ? qClass(v) : ""}`}>{v != null ? v.toFixed(1) + " %" : "–"}</div>
+              <div className="sub">{fmtD(lastDay)} · medián 7 dní {m7.toFixed(1)} % {v != null ? (v >= m7 ? "▲" : "▼") : ""} · {last ? nf.format(+last.celkem) : 0} JBL</div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="section">
+        <div className="frm" style={{ marginBottom: 8 }}>
+          <div className="seg">
+            {[[30, "30 dní"], [90, "90 dní"], [3650, "všetko"]].map(([n, l]) =>
+              <button key={n} className={range === n ? "on" : ""} onClick={() => setRange(n)}>{l}</button>)}
+          </div>
+          <div className="fld"><label>Proces</label>
+            <select value={proces} onChange={(e) => setProces(e.target.value)}>{procesy.map((p) => <option key={p}>{p}</option>)}</select></div>
+        </div>
+        <h3>Kvalita · {proces}</h3>
+        <div className="chartbox">
+          <Lines height={230} xLabels={sel.map((r) => fmtD(r.datum))} series={[
+            { color: "var(--green)", points: sel.map(kv) },
+          ]} />
+        </div>
+      </div>
+
+      {hod && hod.profil[proces] && (
+        <div className="section">
+          <h3>Kvalita podľa hodiny dňa · posledných {hod.dni} dní</h3>
+          <div className="chartbox">
+            <Bars color="var(--amber)" height={200} data={OP_HOURS.map((h) => ({ x: String(h).padStart(2, "0"), y: hod.profil[proces][h] ?? 0 }))} />
+          </div>
+          <p className="note">Nízke stĺpce ukazujú hodiny, kde sa koncentrujú oneskorené dokončenia.</p>
+        </div>
+      )}
+
+      <div className="section">
+        <h3>Najslabšie dni · {proces} (v zobrazenom období)</h3>
+        <table className="t"><thead><tr><th>Deň</th><th>Kvalita</th><th>Jobline</th><th>Po limite</th></tr></thead>
+          <tbody>{worst.map((r) => (
+            <tr key={r.datum}><td>{fmtD(r.datum)}{r.datum.slice(0, 4)} {DNI[dow(r.datum)]}</td>
+              <td className={qClass(kv(r))}>{kv(r).toFixed(1)} %</td>
+              <td>{nf.format(+r.celkem)}</td><td>{nf.format(+r.pozde)}</td></tr>
+          ))}</tbody></table>
+      </div>
+    </>
+  );
+}
+
+// ------------------------------------------------------------ 🧮 KPI
+function TabKPI({ TP, uda, pomery, kpi, setKpi, save }) {
+  const PROCESY = ["Príjem", "Pick", "Pack", "Sort"];
+  const [datum, setDatum] = useState(today());
+  const [vykony, setVykony] = useState(null); // {proces: string}
+  const [override, setOverride] = useState({}); // ručný objem
+  const [selProc, setSelProc] = useState("Pick");
+
+  const vyk = vykony ?? Object.fromEntries(PROCESY.map((p) => {
+    const r = kpi.find((k) => k.proces === p);
+    return [p, r ? String(r.vykon) : ""];
+  }));
+  const setV = (p, val) => setVykony({ ...vyk, [p]: val });
+
+  const objemAuto = (p) => {
+    if (p === "Príjem") return predictDay(datum, TP.prijem.model, uda);
+    return predictDay(datum, TP.triedenie.model, uda) * (pomery[p] ?? 1);
+  };
+  const objem = (p) => (override[p] !== undefined && override[p] !== "" ? +override[p] : objemAuto(p));
+  const hodiny = (p) => (+vyk[p] > 0 ? objem(p) / +vyk[p] : null);
+  const spolu = PROCESY.reduce((a, p) => a + (hodiny(p) || 0), 0);
+
+  const ulozVykony = () => {
+    const rows = PROCESY.filter((p) => vyk[p] !== "").map((p) => ({ proces: p, vykon: vyk[p] }));
+    save("kpi.csv", rows, ["proces", "vykon"], "data: KPI výkony procesov", setKpi);
+  };
+
+  const prof = selProc === "Príjem" ? TP.prijem.prof : TP.triedenie.prof;
+  const p24 = prof[String(dow(datum) >= 5)];
+  const selVyk = +vyk[selProc] > 0 ? +vyk[selProc] : null;
+
+  return (
+    <>
+      <p className="note">
+        Zadaj hodinový výkon (JBL na osobu a hodinu) pre každý proces – appka z predikovaného objemu
+        vypočíta potrebné človekohodiny na prevádzkový deň. Objem sa predvypĺňa z modelu
+        (Pick/Pack/Sort z triedenia × pomer procesov za 60 dní, Príjem z vlastného modelu) a dá sa ručne prepísať.
+      </p>
+      <div className="frm" style={{ marginBottom: 12 }}>
+        <div className="fld"><label>Prevádzkový deň</label><input type="date" value={datum} onChange={(e) => setDatum(e.target.value)} /></div>
+        <button className="btn" onClick={ulozVykony}>💾 Uložiť výkony</button>
+      </div>
+
+      <table className="t">
+        <thead><tr><th>Proces</th><th>Objem (JBL)</th><th>Výkon (JBL/os./hod)</th><th>Človekohodiny</th></tr></thead>
+        <tbody>
+          {PROCESY.map((p) => (
+            <tr key={p}>
+              <td style={{ fontFamily: "var(--sans)" }}>{p}{p !== "Príjem" && pomery[p] && pomery[p] !== 1 ? ` (×${pomery[p].toFixed(2)})` : ""}</td>
+              <td><input type="number" min="0" step="100" style={{ width: 110, background: "#0d1117", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 8px", fontFamily: "var(--mono)" }}
+                value={override[p] !== undefined && override[p] !== "" ? override[p] : Math.round(objemAuto(p))}
+                onChange={(e) => setOverride({ ...override, [p]: e.target.value })} /></td>
+              <td><input type="number" min="0" step="1" placeholder="zadaj" style={{ width: 90, background: "#0d1117", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 8px", fontFamily: "var(--mono)" }}
+                value={vyk[p]} onChange={(e) => setV(p, e.target.value)} /></td>
+              <td className={hodiny(p) != null ? "accent" : ""} style={{ fontWeight: 650 }}>
+                {hodiny(p) != null ? nf1.format(hodiny(p)) + " h" : "–"}</td>
+            </tr>
+          ))}
+          <tr>
+            <td style={{ fontFamily: "var(--sans)", fontWeight: 650 }}>Spolu</td>
+            <td>{nf.format(PROCESY.reduce((a, p) => a + objem(p), 0))}</td><td />
+            <td className="accent" style={{ fontWeight: 700 }}>{spolu > 0 ? nf1.format(spolu) + " h" : "–"}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p className="note">Človekohodiny = objem ÷ výkon. Pri 8-hodinových zmenách: {spolu > 0 ? `${nf1.format(spolu)} h ≈ ${nf1.format(spolu / 8)} ľudí na deň (bez prestávok a réžie)` : "doplň výkony pre prepočet"}.</p>
+
+      <div className="section">
+        <div className="frm" style={{ marginBottom: 8 }}>
+          <div className="fld"><label>Proces pre hodinový plán</label>
+            <select value={selProc} onChange={(e) => setSelProc(e.target.value)}>{PROCESY.map((p) => <option key={p}>{p}</option>)}</select></div>
+        </div>
+        <h3>Potrební ľudia po hodinách · {selProc} · {fmtD(datum)}</h3>
+        {selVyk ? (
+          <div className="chartbox">
+            <Bars color="var(--blue)" data={OP_HOURS.map((h) => ({ x: String(h).padStart(2, "0"), y: (objem(selProc) * p24[h]) / selVyk }))} />
+            <p className="note">Hodinový objem ÷ výkon = počet ľudí potrebných v danej hodine (profil {selProc === "Príjem" ? "príjmu" : "triedenia"}, prevádzkový deň).</p>
+          </div>
+        ) : <p className="note">Zadaj výkon procesu {selProc}, aby sa zobrazil hodinový plán.</p>}
+      </div>
+    </>
+  );
+}
+
 // ------------------------------------------------------------ 🧠 Model
 function TabModel({ D }) {
   const { model, prof } = D;
@@ -604,9 +829,9 @@ function TabModel({ D }) {
       <div className="section chartbox">
         <h3 style={{ margin: "2px 0 6px", fontSize: 14 }}>Hodinový profil (podiel dňa, 6 týždňov)</h3>
         <div className="legend"><span><i style={{ background: "var(--green)" }} />pracovný deň</span><span><i style={{ background: "var(--muted)" }} />víkend</span></div>
-        <Lines height={200} xLabels={Array.from({ length: 24 }, (_, h) => String(h).padStart(2, "0"))} series={[
-          { color: "var(--green)", points: prof["false"].map((v) => v * 100) },
-          { color: "var(--muted)", points: prof["true"].map((v) => v * 100) },
+        <Lines height={200} xLabels={OP_HOURS.map((h) => String(h).padStart(2, "0"))} series={[
+          { color: "var(--green)", points: OP_HOURS.map((h) => prof["false"][h] * 100) },
+          { color: "var(--muted)", points: OP_HOURS.map((h) => prof["true"][h] * 100) },
         ]} />
       </div>
       <p className="note">
