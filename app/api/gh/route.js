@@ -12,7 +12,7 @@ function ghHint(status) {
   return `GitHub ${status}`;
 }
 
-const ALLOWED = new Set(["zaznamy.csv", "vynimky.csv", "udalosti.csv", "priebeh.csv"]);
+const ALLOWED = new Set(["zaznamy.csv", "vynimky.csv", "udalosti.csv", "priebeh.csv", "kpi.csv"]);
 
 function cfg() {
   return {
