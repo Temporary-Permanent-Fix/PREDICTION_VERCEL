@@ -4,7 +4,7 @@ import { parseCSV, toCSV } from "../lib/csv";
 import {
   TYPY_VYNIMIEK, TYPY_UDALOSTI, buildDaily, mergedHourly, fitModel, predictDay,
   expectedFor, hourlyProfile, eventMult, intraday, cumProfile, predictZvoz,
-  addDays, dow, DNI, fmtD, iso, opShift, OP_HOURS, OP_START, dropIncompleteLastOpDay,
+  addDays, dow, DNI, fmtD, iso, opShift, OP_HOURS, OP_START, dropIncompleteLastOpDay, backtest,
 } from "../lib/model";
 
 const nf = new Intl.NumberFormat("sk-SK", { maximumFractionDigits: 0 });
@@ -238,7 +238,7 @@ export default function Page() {
       {tab === "udal" && <TabUdalosti D={D} uda={uda} setUdalosti={setUdalosti} save={save} />}
       {tab === "kvalita" && <TabKvalita staticData={staticData} />}
       {tab === "kpi" && <TabKPI TP={TP} uda={uda} pomery={staticData.pomery} kpi={kpi} setKpi={setKpi} save={save} />}
-      {tab === "model" && <TabModel D={D} />}
+      {tab === "model" && <TabModel D={{ ...D, udaRef: uda }} />}
 
       {toast && <div className={`toast ${toast.err ? "err" : ""}`}>{toast.msg}</div>}
     </div>
@@ -829,6 +829,16 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save }) {
 // ------------------------------------------------------------ 🧠 Model
 function TabModel({ D }) {
   const { model, prof } = D;
+  const [bt, setBt] = useState(null);
+  const [btBusy, setBtBusy] = useState(false);
+  const runBt = () => {
+    setBtBusy(true);
+    // výpočet mimo klik-handlera, nech UI stihne prekresliť
+    setTimeout(() => {
+      setBt(backtest(D.daily, D.vynD, D.udaRef || [], 30));
+      setBtBusy(false);
+    }, 30);
+  };
   return (
     <>
       <p className="note">Predikcia = <b>úroveň s trendom</b> × <b>faktor dňa v týždni</b> × <b>faktor dňa v mesiaci</b> × <b>koeficient udalostí</b>.
@@ -853,6 +863,35 @@ function TabModel({ D }) {
           { color: "var(--muted)", points: OP_HOURS.map((h) => prof["true"][h] * 100) },
         ]} />
       </div>
+      <div className="section">
+        <h3>Backtest · presnosť predikcie „deň vopred“ (posledných 30 dní)</h3>
+        <p className="note">Pre každý deň sa model natrénuje len na dátach do predchádzajúceho dňa a predikcia sa porovná so skutočnosťou – presne ako v reálnom použití. Dni s výnimkou sa preskakujú.</p>
+        {!bt && <button className="btn" disabled={btBusy} onClick={runBt}>{btBusy ? "Počítam…" : "▶️ Spustiť backtest"}</button>}
+        {bt && (
+          <>
+            <div className="grid g4">
+              <Card lbl="MAPE (priem. % chyba)" val={(bt.mape * 100).toFixed(1) + " %"} cls={bt.mape <= 0.08 ? "accent" : bt.mape <= 0.12 ? "warn" : "bad"} sub={`${bt.n} testovaných dní`} />
+              <Card lbl="MAE (priem. abs. chyba)" val={nf.format(bt.mae)} sub="jobline na deň" />
+              <Card lbl="Dní s chybou do ±5 000" val={`${bt.do5k}/${bt.n}`} />
+              <Card lbl="Bias (systematický posun)" val={(bt.bias >= 0 ? "+" : "") + nf.format(bt.bias)} cls={Math.abs(bt.bias) <= 2000 ? "" : "warn"} sub={bt.bias > 2000 ? "model podstreľuje – over promo/udalosti" : bt.bias < -2000 ? "model prestreľuje – over výnimky" : "v norme"} />
+            </div>
+            <div className="chartbox" style={{ marginTop: 10 }}>
+              <div className="legend"><span><i style={{ background: "var(--green)" }} />skutočnosť</span><span><i style={{ background: "var(--muted)" }} />predikcia deň vopred</span></div>
+              <Lines height={230} xLabels={bt.dni.map((r) => fmtD(r.datum))} series={[
+                { color: "var(--green)", points: bt.dni.map((r) => r.skut) },
+                { color: "var(--muted)", points: bt.dni.map((r) => r.pred) },
+              ]} />
+            </div>
+            <table className="t" style={{ marginTop: 10 }}><thead><tr><th>Deň</th><th>Skutočnosť</th><th>Predikcia</th><th>Odchýlka</th></tr></thead>
+              <tbody>{[...bt.dni].sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct)).slice(0, 6).map((r) => (
+                <tr key={r.datum}><td>{fmtD(r.datum)} {DNI[dow(r.datum)]}</td><td>{nf.format(r.skut)}</td><td>{nf.format(r.pred)}</td>
+                  <td className={Math.abs(r.pct) >= 0.1 ? "bad" : "warn"}>{(r.pct * 100).toFixed(1)} %</td></tr>
+              ))}</tbody></table>
+            <p className="note">Tabuľka: 6 najhorších dní – kandidáti na chýbajúcu udalosť (promo) alebo výnimku (výpadok).</p>
+          </>
+        )}
+      </div>
+
       <p className="note">
         Denná úroveň (deseasonalizovaná): <b>{nf.format(model.levelNow)} JBL</b> ·
         trend <b>{model.slope >= 0 ? "+" : ""}{nf.format(model.slope)}/deň</b> (tlmený, ~50 % po 30 dňoch) ·
