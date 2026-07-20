@@ -264,10 +264,14 @@ function TabPredikcia({ D, uda }) {
         <div className="fld"><label>Horizont: {horizon} dní</label><input type="range" min="7" max="28" value={horizon} onChange={(e) => setHorizon(+e.target.value)} /></div>
       </div>
       <div className="grid g4">
-        <Card lbl={`${jePast ? "Očakávané (spätne)" : "Predikcia"} na ${fmtD(datum)} (${DNI[dow(datum)]})`} val={`${nf.format(pred)}`} cls="accent"
-          sub={jePast
-            ? (skut != null ? `skutočnosť: ${nf.format(skut)} · odchýlka ${((skut / pred - 1) * 100).toFixed(1)} %` : "skutočnosť pre tento deň nie je v dátach")
-            : `80 % interval: ${nf.format(pred * (1 - 1.28 * s))} – ${nf.format(pred * (1 + 1.28 * s))}`} />
+        {jePast && skut != null ? (
+          <Card lbl={`Skutočnosť · ${fmtD(datum)} (${DNI[dow(datum)]})`} val={nf.format(skut)} cls="accent"
+            sub={`model očakával ${nf.format(pred)} · odchýlka ${((skut / pred - 1) * 100).toFixed(1)} %`} />
+        ) : (
+          <Card lbl={`${jePast ? "Očakávané (spätne)" : "Predikcia"} na ${fmtD(datum)} (${DNI[dow(datum)]})`} val={nf.format(pred)} cls="accent"
+            sub={jePast ? "skutočnosť pre tento deň nie je v dátach – doplň ju v Zadávaní dát"
+              : `80 % interval: ${nf.format(pred * (1 - 1.28 * s))} – ${nf.format(pred * (1 + 1.28 * s))} · zohľadňuje skutočnosť posledných dní (korekcia ×${(model.corr ?? 1).toFixed(2)})`} />
+        )}
         <Card lbl="Faktor dňa v týždni" val={model.dowF[dow(datum)].toFixed(2)} sub={`deň v mesiaci: ${model.domF[new Date(datum).getUTCDate()].toFixed(2)}`} />
         <Card lbl="Udalosti" val={`×${ev.toFixed(2)}`} cls={ev === 1 ? "" : "warn"} sub={ev === 1 ? "žiadna aktívna udalosť" : "aktívna udalosť upravuje predikciu"} />
         <Card lbl="Denná úroveň modelu" val={nf.format(model.levelNow)} sub={`trend ${model.slope >= 0 ? "+" : ""}${nf.format(model.slope)}/deň, tlmený`} />
