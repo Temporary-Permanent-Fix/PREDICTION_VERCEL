@@ -95,7 +95,6 @@ export default function Page() {
   const [udalosti, setUdalosti] = useState([]);
   const [priebeh, setPriebeh] = useState([]);
   const [kpi, setKpi] = useState([]);
-  const [backlog, setBacklog] = useState([]);
   const [backlogy, setBacklogy] = useState([]);
   const [ghOk, setGhOk] = useState(null);
   const [loadErr, setLoadErr] = useState(null);
@@ -144,7 +143,6 @@ export default function Page() {
       loadMut("udalosti.csv", setUdalosti);
       loadMut("priebeh.csv", setPriebeh);
       loadMut("kpi.csv", setKpi);
-      loadMut("backlog.csv", setBacklog);
       loadMut("backlog.csv", setBacklogy);
       } catch (e) { setLoadErr(String(e.message || e)); }
     })();
@@ -243,7 +241,7 @@ export default function Page() {
       </div>
 
       {tab === "pred" && <TabPredikcia D={D} uda={uda} />}
-      {tab === "zvoz" && <TabZvoz V={V} staticData={staticData} uda={uda} backlogy={backlogy} />}
+      {tab === "zvoz" && <TabZvoz V={V} TP={TP} staticData={staticData} uda={uda} backlogy={backlogy} />}
       {tab === "prepocet" && <TabPrepocet D={D} uda={uda} src={src} priebeh={priebeh} save={save} setPriebeh={setPriebeh} />}
       {tab === "vstup" && <TabVstup src={src} zaznamy={zaznamy} setZaznamy={setZaznamy} vynimky={vynimky} setVynimky={setVynimky} save={save} />}
       {tab === "anom" && <TabAnomalie D={D} uda={uda} src={src} vynimky={vynimky} setVynimky={setVynimky} save={save} kpi={kpi} pomery={staticData.pomery} backlogy={backlogy} setBacklogy={setBacklogy} />}
@@ -321,10 +319,12 @@ function TabPredikcia({ D, uda }) {
 }
 
 // ------------------------------------------------------------------ 🚚 Zvozy
-function TabZvoz({ V, staticData, uda, backlogy }) {
+function TabZvoz({ V, TP, staticData, uda, backlogy }) {
   const [datum, setDatum] = useState(today());
   const actual = useMemo(() => new Map(V.daily.map((r) => [r.datum, r.jbl])), [V.daily]);
   const vznikyOf = (d) => actual.get(d) ?? expectedFor(d, V.model, uda);
+  const distActual = useMemo(() => new Map(TP.distribucia.daily.map((r) => [r.datum, r.jbl])), [TP.distribucia.daily]);
+  const distVol = distActual.get(datum) ?? expectedFor(datum, TP.distribucia.model, uda);
   const z = predictZvoz(datum, staticData.matica, V.prof, vznikyOf);
   const blDen = (backlogy || []).filter((b) => b.na_datum === datum && (b.zdroj || "triedenie") !== "prijem")
     .reduce((a, b) => a + +b.objem * ((b.zdroj || "triedenie") === "vzniky" ? 0.884 : 1), 0);
@@ -364,7 +364,8 @@ function TabZvoz({ V, staticData, uda, backlogy }) {
         <div className="chartbox">
           <Bars color="var(--blue)" data={Array.from({ length: 7 }, (_, i) => {
             const d = addDays(today(), i);
-            const b7 = (backlog || []).filter((b) => b.datum === d && (b.zdroj || "triedenie") !== "prijem").reduce((a, b) => a + (+b.objem || 0), 0);
+            const b7 = (backlogy || []).filter((b) => b.na_datum === d && (b.zdroj || "triedenie") !== "prijem")
+              .reduce((a, b) => a + +b.objem * ((b.zdroj || "triedenie") === "vzniky" ? 0.884 : 1), 0);
             return { x: `${fmtD(d)} ${DNI[dow(d)]}`, y: predictZvoz(d, staticData.matica, V.prof, vznikyOf).total + b7, hl: b7 > 0 };
           })} />
           <div className="legend"><span><i style={{ background: "var(--blue)" }} />predikcia</span><span><i style={{ background: "var(--amber)" }} />deň s preneseným backlogom</span></div>
@@ -578,7 +579,6 @@ function TabAnomalie({ D, uda, src, vynimky, setVynimky, save, kpi, pomery, back
   const [popis, setPopis] = useState("");
   const [selHod, setSelHod] = useState([]);
   const [blDatum, setBlDatum] = useState("");
-  const [blCiel, setBlCiel] = useState("");
   const { daily, model, prof, hourly, part } = D;
   const VCOLS = ["datum", "typ", "popis", "hodiny"];
   const vmap = new Map(vynimky.map((v) => [v.datum, v]));
@@ -646,21 +646,16 @@ function TabAnomalie({ D, uda, src, vynimky, setVynimky, save, kpi, pomery, back
     }).filter((x) => x.objem >= 20).sort((a, b) => (a.datum + String(a.zh).padStart(2, "0") < b.datum + String(b.zh).padStart(2, "0") ? -1 : 1));
   })();
 
+  const uzPrenesene = bl && backlogy.some((b) => b.z_datum === bl.vyn.datum && (b.zdroj || "triedenie") === src);
   const prenesBacklog = () => {
     if (!bl) return;
-    const popis = `z ${bl.vyn.datum} (${bl.vyn.typ})`;
     const perDay = new Map();
     for (const c of blCiele) perDay.set(c.datum, (perDay.get(c.datum) || 0) + c.objem);
-    const zdrojKey = src === "prijem" ? "prijem" : "triedenie";
-    const rest = backlog.filter((b) => !(b.popis === popis && (b.zdroj || "triedenie") === zdrojKey));
-    const rows = [...rest, ...[...perDay.entries()].map(([datum, o]) => ({
-      datum, objem: Math.round(o * blScale), zdroj: zdrojKey, popis,
+    const rest = backlogy.filter((b) => !(b.z_datum === bl.vyn.datum && (b.zdroj || "triedenie") === src));
+    const rows = [...rest, ...[...perDay.entries()].map(([na_datum, o]) => ({
+      z_datum: bl.vyn.datum, na_datum, objem: Math.round(o), zdroj: src, poznamka: bl.vyn.typ,
     }))];
-    save("backlog.csv", rows, ["datum", "objem", "zdroj", "popis"], `data: presun backlogu ${popis}`, setBacklog);
-  };
-  const zmazBacklog = (i) => {
-    const rows = backlog.filter((_, j) => j !== i);
-    save("backlog.csv", rows, ["datum", "objem", "zdroj", "popis"], "data: odstránený backlog", setBacklog);
+    save("backlog.csv", rows, BCOLS, `data: presun backlogu ${bl.vyn.datum}`, setBacklogy);
   };
 
   return (
@@ -720,22 +715,6 @@ function TabAnomalie({ D, uda, src, vynimky, setVynimky, save, kpi, pomery, back
                   sub={blSpolu > 0 ? `≈ ${nf1.format(blSpolu / 8)} ľudí na 8h zmenu navyše` : "doplň výkony v záložke KPI"} />
                 <Card lbl="Dopad" val="+1 deň" sub="objem stráca prioritu a čaká na nasledujúci zvoz – práca nezmizla, len sa posunula" />
               </div>
-              <div className="frm" style={{ marginTop: 10 }}>
-                <div className="fld"><label>Preniesť backlog na deň</label>
-                  <input type="date" value={blCiel || addDays(bl.vyn.datum, 1)} onChange={(e) => setBlCiel(e.target.value)} /></div>
-                <button className="btn" disabled={backlogy.some((b) => b.z_datum === bl.vyn.datum && (b.zdroj || "triedenie") === src)}
-                  onClick={() => {
-                    const rows = [...backlogy, { z_datum: bl.vyn.datum, na_datum: blCiel || addDays(bl.vyn.datum, 1),
-                      objem: Math.round(bl.backlog), zdroj: src, poznamka: bl.vyn.typ }];
-                    save("backlog.csv", rows, BCOLS, `data: backlog ${bl.vyn.datum} -> ${blCiel || addDays(bl.vyn.datum, 1)}`, setBacklogy);
-                  }}>
-                  ➡️ Preniesť do plánu dňa
-                </button>
-                {backlogy.some((b) => b.z_datum === bl.vyn.datum && (b.zdroj || "triedenie") === src) &&
-                  <span className="note" style={{ alignSelf: "center" }}>✓ už prenesené</span>}
-              </div>
-              <p className="note">Prenesený backlog sa pripočíta k objemu cieľového dňa v záložkách KPI (človekohodiny) a Zvozy.
-                Default je nasledujúci prevádzkový deň; pri linkách s dvoma zvozmi denne môže časť odísť ešte v ten istý deň – uprav cieľ podľa harmonogramu zvozov.</p>
               <table className="t" style={{ marginTop: 10 }}><thead><tr><th>Proces</th><th>Backlog objem</th><th>Výkon (JBL/os/h)</th><th>Hodiny navyše</th></tr></thead>
                 <tbody>{blHodiny.map((x) => (
                   <tr key={x.p}><td style={{ fontFamily: "var(--sans)" }}>{x.p}</td><td>{nf.format(x.objem)}</td>
@@ -751,24 +730,12 @@ function TabAnomalie({ D, uda, src, vynimky, setVynimky, save, kpi, pomery, back
                     <td>{String(c.zh).padStart(2, "0")}:00</td><td>{nf.format(c.objem)}</td></tr>
                 ))}</tbody></table>
               <div className="frm" style={{ marginTop: 10 }}>
-                <button className="btn" onClick={prenesBacklog}>📤 Preniesť backlog do plánu ({[...new Set(blCiele.map((c) => c.datum))].map((d) => fmtD(d)).join(", ")})</button>
+                <button className="btn" disabled={uzPrenesene} onClick={prenesBacklog}>📤 Preniesť backlog do plánu ({[...new Set(blCiele.map((c) => c.datum))].map((d) => fmtD(d)).join(", ")})</button>
+                {uzPrenesene && <span className="note" style={{ alignSelf: "center" }}>✓ už prenesené – zrušiť sa dá v zozname nižšie</span>}
               </div>
               <p className="note">Prenesený backlog sa pripočíta k objemom v záložkách KPI (človekohodiny) a Zvozy pre cieľové dni.</p>
             </>
           )}
-        </div>
-      )}
-
-      {backlog.length > 0 && (
-        <div className="section">
-          <h3>Prenesený backlog ({backlog.length})</h3>
-          <table className="t"><thead><tr><th>Cieľový deň</th><th>Objem</th><th>Zdroj</th><th>Pôvod</th><th /></tr></thead>
-            <tbody>{backlog.map((b, i) => (
-              <tr key={i}><td>{fmtD(b.datum)}{String(b.datum).slice(0, 4)}</td><td>{nf.format(+b.objem)}</td>
-                <td><span className="pill gray">{b.zdroj || "triedenie"}</span></td>
-                <td style={{ fontFamily: "var(--sans)" }}>{b.popis}</td>
-                <td><button className="btn ghost" onClick={() => zmazBacklog(i)}>🗑️</button></td></tr>
-            ))}</tbody></table>
         </div>
       )}
 
