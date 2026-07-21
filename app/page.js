@@ -210,45 +210,58 @@ export default function Page() {
   const uda = udalosti;
 
   const trendPct = model.slope >= 0 ? "up" : "down";
+  const STANDALONE = ["kvalita", "udal", "kpi", "model"];
+  const naZdroji = !STANDALONE.includes(tab);
+  const prepniZdroj = (key) => {
+    setSrc(key);
+    if (!naZdroji || (key !== "vzniky" && tab === "zvoz")) setTab("pred");
+  };
   return (
     <div className="shell">
       <div className="masthead">
         <h1>PREDIKCIA SKLC3</h1>
         <div className="statusline">
-          <span>zdroj <b>{{ vzniky: "vzniky (zákaznícke)", triedenie: "triedenie (expedícia)", prijem: "príjem (received)", distribucia: "distribúcia (medzisklad)" }[src]}</b></span>
           <span>deň <b>06:00–06:00</b></span>
-          <span>tréning <b>{model.trainDays} dní</b></span>
-          <span>posledné dáta <b>{fmtD(model.lastDate)}{model.lastDate.slice(0, 4)}</b></span>
-          <span>úroveň <b>{nf.format(model.levelNow)}</b> JBL/deň</span>
-          <span className={trendPct}>trend {model.slope >= 0 ? "▲" : "▼"} {nf.format(Math.abs(model.slope))}/deň</span>
-          {Math.abs((model.corr ?? 1) - 1) >= 0.02 && <span className="warn">korekcia ×{model.corr.toFixed(2)}</span>}
+          {naZdroji && (
+            <>
+              <span>zdroj <b>{{ vzniky: "vzniky (zákaznícke)", triedenie: "triedenie (expedícia)", prijem: "príjem (received)", distribucia: "distribúcia (medzisklad)" }[src]}</b></span>
+              <span>tréning <b>{model.trainDays} dní</b></span>
+              <span>posledné dáta <b>{fmtD(model.lastDate)}{model.lastDate.slice(0, 4)}</b></span>
+              <span>úroveň <b>{nf.format(model.levelNow)}</b> JBL/deň</span>
+              <span className={trendPct}>trend {model.slope >= 0 ? "▲" : "▼"} {nf.format(Math.abs(model.slope))}/deň</span>
+              {Math.abs((model.corr ?? 1) - 1) >= 0.02 && <span className="warn">korekcia ×{model.corr.toFixed(2)}</span>}
+            </>
+          )}
         </div>
-        <div className="srcswitch" role="tablist" aria-label="Zdroj dát">
-          <button className={src === "vzniky" ? "on" : ""} onClick={() => setSrc("vzniky")}>🛒 Vzniky</button>
-          <button className={src === "triedenie" ? "on" : ""} onClick={() => setSrc("triedenie")}>📦 Triedenie</button>
-          <button className={src === "prijem" ? "on" : ""} onClick={() => setSrc("prijem")}>📥 Príjem</button>
-          <button className={src === "distribucia" ? "on" : ""} onClick={() => setSrc("distribucia")}>🔁 Distribúcia</button>
+        <div className="srcswitch" role="tablist" aria-label="Sekcia">
+          {[["vzniky", "🛒 Vzniky"], ["triedenie", "📦 Triedenie"], ["prijem", "📥 Príjem"], ["distribucia", "🔁 Distribúcia"]].map(([k, l]) =>
+            <button key={k} className={naZdroji && src === k ? "on" : ""} onClick={() => prepniZdroj(k)}>{l}</button>)}
+          <span style={{ alignSelf: "center", color: "var(--border)", padding: "0 2px", userSelect: "none" }}>│</span>
+          {[["kvalita", "✅ Kvalita"], ["udal", "📅 Udalosti"], ["kpi", "🧮 KPI"], ["model", "🧠 Model"]].map(([k, l]) =>
+            <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}
         </div>
-        {src === "distribucia" && <div className="note" style={{ marginTop: 8 }}>🔁 Distribúcia = preposielanie medzi skladmi (vrátane nočného batchu ~3:00). Objem riadi doplňovanie, nie zákaznícky dopyt – predikciu ber orientačnejšie než pri zákazníckych vznikoch.</div>}
-        {src === "prijem" && <div className="note" style={{ marginTop: 8 }}>📥 Príjem je riadený harmonogramom dodávok, nie zákazníckym dopytom – predikcia je orientačná (typická odchýlka ±20–40 %). Presnejší odhad by dali avíza dodávok.</div>}
+        {naZdroji && src === "distribucia" && <div className="note" style={{ marginTop: 8 }}>🔁 Distribúcia = preposielanie medzi skladmi (vrátane nočného batchu ~3:00). Objem riadi doplňovanie, nie zákaznícky dopyt – predikciu ber orientačnejšie než pri zákazníckych vznikoch.</div>}
+        {naZdroji && src === "prijem" && <div className="note" style={{ marginTop: 8 }}>📥 Príjem je riadený harmonogramom dodávok, nie zákazníckym dopytom – predikcia je orientačná (typická odchýlka ±20–40 %). Presnejší odhad by dali avíza dodávok.</div>}
         {ghOk === false && <div className="note" style={{ marginTop: 8 }}>⚠️ GitHub zápis nie je nakonfigurovaný (env GH_TOKEN / GH_REPO) – zmeny platia len do obnovenia stránky.</div>}
       </div>
 
-      <div className="tabs">
-        {[["pred", "🔮 Predikcia"], ["zvoz", "🚚 Zvozy"], ["prepocet", "🔄 Prepočet predikcie"],
-          ["vstup", "➕ Zadávanie dát"], ["anom", "⚠️ Anomálie"], ["udal", "📅 Udalosti"], ["kvalita", "✅ Kvalita"], ["kpi", "🧮 KPI"], ["model", "🧠 Model"]]
-          .map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}
-      </div>
+      {naZdroji && (
+        <div className="tabs">
+          {[["pred", "🔮 Predikcia"], ...(src === "vzniky" ? [["zvoz", "🚚 Zvozy"]] : []), ["prepocet", "🔄 Prepočet predikcie"],
+            ["vstup", "➕ Zadávanie dát"], ["anom", "⚠️ Anomálie"]]
+            .map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}
+        </div>
+      )}
 
       {tab === "pred" && <TabPredikcia D={D} uda={uda} />}
       {tab === "zvoz" && <TabZvoz V={V} TP={TP} staticData={staticData} uda={uda} backlogy={backlogy} />}
       {tab === "prepocet" && <TabPrepocet D={D} uda={uda} src={src} priebeh={priebeh} save={save} setPriebeh={setPriebeh} />}
       {tab === "vstup" && <TabVstup src={src} zaznamy={zaznamy} setZaznamy={setZaznamy} vynimky={vynimky} setVynimky={setVynimky} save={save} />}
       {tab === "anom" && <TabAnomalie D={D} uda={uda} src={src} vynimky={vynimky} setVynimky={setVynimky} save={save} kpi={kpi} pomery={staticData.pomery} backlogy={backlogy} setBacklogy={setBacklogy} />}
-      {tab === "udal" && <TabUdalosti D={D} uda={uda} setUdalosti={setUdalosti} save={save} />}
+      {tab === "udal" && <TabUdalosti D={V} uda={uda} setUdalosti={setUdalosti} save={save} />}
       {tab === "kvalita" && <TabKvalita staticData={staticData} />}
       {tab === "kpi" && <TabKPI TP={TP} uda={uda} pomery={staticData.pomery} kpi={kpi} setKpi={setKpi} save={save} backlogy={backlogy} />}
-      {tab === "model" && <TabModel D={{ ...D, udaRef: uda }} />}
+      {tab === "model" && <TabModel sources={{ vzniky: { ...V, vynD: vynimky.map((v) => v.datum) }, triedenie: TP.triedenie, prijem: TP.prijem, distribucia: TP.distribucia }} vynD={vynimky.map((v) => v.datum)} uda={uda} />}
 
       {toast && <div className={`toast ${toast.err ? "err" : ""}`}>{toast.msg}</div>}
     </div>
@@ -984,9 +997,9 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy }) {
         <button className="btn" onClick={ulozVsetko}>💾 Uložiť výkony</button>
       </div>
 
-      {(bkTried > 0 || bkPrij > 0) && (
+      {blNaDen.length > 0 && (
         <p className="note" style={{ color: "var(--amber)" }}>
-          📤 V objemoch dňa {fmtD(datum)} je zahrnutý prenesený backlog: {bkTried > 0 ? `${nf.format(bkTried)} JBL (triedenie)` : ""}{bkTried > 0 && bkPrij > 0 ? " + " : ""}{bkPrij > 0 ? `${nf.format(bkPrij)} JBL (príjem)` : ""} – spravuje sa v záložke Anomálie.
+          📤 V objemoch dňa {fmtD(datum)} je zahrnutý prenesený backlog ({blNaDen.length} {blNaDen.length === 1 ? "položka" : "položky"}, spolu {nf.format(blNaDen.reduce((a, b) => a + +b.objem, 0))} JBL) – spravuje sa v záložke Anomálie.
         </p>
       )}
       <table className="t">
@@ -1035,20 +1048,27 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy }) {
 }
 
 // ------------------------------------------------------------ 🧠 Model
-function TabModel({ D }) {
+function TabModel({ sources, vynD, uda }) {
+  const [msrc, setMsrc] = useState("vzniky");
+  const D = sources[msrc];
   const { model, prof } = D;
   const [bt, setBt] = useState(null);
   const [btBusy, setBtBusy] = useState(false);
+  useEffect(() => { setBt(null); }, [msrc]);
   const runBt = () => {
     setBtBusy(true);
     // výpočet mimo klik-handlera, nech UI stihne prekresliť
     setTimeout(() => {
-      setBt(backtest(D.dailyAdj || D.daily, D.btExcl || D.vynD, D.udaRef || [], 30));
+      setBt(backtest(D.daily, vynD, uda, 30));
       setBtBusy(false);
     }, 30);
   };
   return (
     <>
+      <div className="seg" style={{ marginBottom: 12 }}>
+        {[["vzniky", "🛒 Vzniky"], ["triedenie", "📦 Triedenie"], ["prijem", "📥 Príjem"], ["distribucia", "🔁 Distribúcia"]].map(([k, l]) =>
+          <button key={k} className={msrc === k ? "on" : ""} onClick={() => setMsrc(k)}>{l}</button>)}
+      </div>
       <p className="note">Predikcia = <b>úroveň s trendom</b> × <b>faktor dňa v týždni</b> × <b>faktor dňa v mesiaci</b> × <b>koeficient udalostí</b>.
         Dni s výnimkou sú z tréningu vylúčené, historické udalosti odfiltrované.</p>
       <div className="grid g2">
