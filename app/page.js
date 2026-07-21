@@ -4,7 +4,7 @@ import { parseCSV, toCSV } from "../lib/csv";
 import {
   TYPY_VYNIMIEK, TYPY_UDALOSTI, buildDaily, mergedHourly, fitModel, predictDay,
   expectedFor, hourlyProfile, eventMult, intraday, cumProfile, predictZvoz,
-  addDays, dow, DNI, fmtD, iso, opShift, OP_HOURS, OP_START, dropIncompleteLastOpDay, backtest,
+  addDays, dow, DNI, fmtD, iso, opShift, OP_HOURS, OP_START, dropIncompleteLastOpDay, backtest, parseVynimky, adjustPartialDays, backlogForDay,
 } from "../lib/model";
 
 const nf = new Intl.NumberFormat("sk-SK", { maximumFractionDigits: 0 });
@@ -95,6 +95,8 @@ export default function Page() {
   const [udalosti, setUdalosti] = useState([]);
   const [priebeh, setPriebeh] = useState([]);
   const [kpi, setKpi] = useState([]);
+  const [backlog, setBacklog] = useState([]);
+  const [backlogy, setBacklogy] = useState([]);
   const [ghOk, setGhOk] = useState(null);
   const [loadErr, setLoadErr] = useState(null);
 
@@ -106,10 +108,11 @@ export default function Page() {
         if (!r.ok) throw new Error(`Chýba súbor ${url} (HTTP ${r.status})`);
         return kind === "json" ? r.json() : r.text();
       };
-      const [vz, tr, pr, mt] = await Promise.all([
+      const [vz, tr, pr, ds, mt] = await Promise.all([
         need("/data/vzniky_hodinove.csv"),
         need("/data/baseline_hodinove.csv"),
         fetch("/data/prijem_hodinove.csv").then((r) => (r.ok ? r.text() : "")).catch(() => ""),
+        fetch("/data/distribucia_hodinove.csv").then((r) => (r.ok ? r.text() : "")).catch(() => ""),
         need("/data/zvoz_matica.json", "json"),
       ]);
       const [kvD, kvH, pom] = await Promise.all([
@@ -121,7 +124,9 @@ export default function Page() {
         vzniky: dropIncompleteLastOpDay(opShift(parseCSV(vz))),
         triedenie: dropIncompleteLastOpDay(opShift(parseCSV(tr))),
         prijem: dropIncompleteLastOpDay(opShift(parseCSV(pr))),
+        distribucia: dropIncompleteLastOpDay(opShift(parseCSV(ds))),
         matica: mt.matica, zvozProfil: mt.zvozProfil,
+        slotMap: mt.slotMap || {}, harmonogram: mt.harmonogram || {}, planStat: mt.plan || null,
         kvalitaDenne: parseCSV(kvD), kvalitaHodiny: kvH,
         pomery: pom ? pom.pomery_vs_sorted : { Sort: 1, Pick: 1, Pack: 1 },
       });
@@ -139,6 +144,8 @@ export default function Page() {
       loadMut("udalosti.csv", setUdalosti);
       loadMut("priebeh.csv", setPriebeh);
       loadMut("kpi.csv", setKpi);
+      loadMut("backlog.csv", setBacklog);
+      loadMut("backlog.csv", setBacklogy);
       } catch (e) { setLoadErr(String(e.message || e)); }
     })();
   }, []);
@@ -162,12 +169,15 @@ export default function Page() {
     if (!staticData) return null;
     const zazSrc = zaznamy.filter((z) => (z.zdroj || "triedenie") === src);
     const hourly = mergedHourly(staticData[src], zazSrc);
-    const daily = buildDaily(staticData[src], zazSrc.filter((z) => z.hodina === "" || z.hodina == null || z.hodina === undefined));
     const dailyAll = buildDaily(staticData[src], zazSrc);
-    const vynD = vynimky.map((v) => v.datum);
-    const model = fitModel(dailyAll, vynD, udalosti);
-    const prof = hourlyProfile(hourly, vynD);
-    return { hourly, daily: dailyAll, vynD, model, prof };
+    const { full, part } = parseVynimky(vynimky);
+    const allVynD = [...full, ...part.map((p) => p.datum)];
+    const prof = hourlyProfile(hourly, allVynD);
+    // dni s hodinovou anomáliou: oprav denný objem dopočtom, netreba ich vyhadzovať
+    const { daily: dailyAdj, extraExclude } = adjustPartialDays(dailyAll, hourly, part, prof);
+    const btExcl = [...full, ...extraExclude];
+    const model = fitModel(dailyAdj, btExcl, udalosti);
+    return { hourly, daily: dailyAll, dailyAdj, vynD: allVynD, btExcl, part, model, prof };
   }, [staticData, zaznamy, vynimky, udalosti, src]);
 
   // ---- vzniky vždy (pre zvoz), nezávisle od prepínača
@@ -187,12 +197,12 @@ export default function Page() {
       const vynD = vynimky.map((v) => v.datum);
       return { daily, model: fitModel(daily, vynD, udalosti), prof: hourlyProfile(mergedHourly(staticData[key], zazS), vynD) };
     };
-    return { triedenie: mk("triedenie"), prijem: mk("prijem") };
+    return { triedenie: mk("triedenie"), prijem: mk("prijem"), distribucia: mk("distribucia") };
   }, [staticData, zaznamy, vynimky, udalosti]);
 
   if (loadErr) return (
     <div className="shell"><div className="masthead">
-      <h1>JBL PREDIKCIA <span className="tag">SKLC3</span></h1>
+      <h1>PREDIKCIA SKLC3</h1>
       <div className="note" style={{ marginTop: 8, color: "var(--red)" }}>⚠️ Dáta sa nepodarilo načítať: {loadErr}</div>
       <div className="note">Skontroluj, či je súbor v repe v `public/data/` a či prebehol Redeploy.</div>
     </div></div>
@@ -205,9 +215,9 @@ export default function Page() {
   return (
     <div className="shell">
       <div className="masthead">
-        <h1>JBL PREDIKCIA <span className="tag">SKLC3 · AutoStore</span></h1>
+        <h1>PREDIKCIA SKLC3</h1>
         <div className="statusline">
-          <span>zdroj <b>{{ vzniky: "vzniky (objednávky)", triedenie: "triedenie (expedícia)", prijem: "príjem (received)" }[src]}</b></span>
+          <span>zdroj <b>{{ vzniky: "vzniky (zákaznícke)", triedenie: "triedenie (expedícia)", prijem: "príjem (received)", distribucia: "distribúcia (medzisklad)" }[src]}</b></span>
           <span>deň <b>06:00–06:00</b></span>
           <span>tréning <b>{model.trainDays} dní</b></span>
           <span>posledné dáta <b>{fmtD(model.lastDate)}{model.lastDate.slice(0, 4)}</b></span>
@@ -219,7 +229,9 @@ export default function Page() {
           <button className={src === "vzniky" ? "on" : ""} onClick={() => setSrc("vzniky")}>🛒 Vzniky</button>
           <button className={src === "triedenie" ? "on" : ""} onClick={() => setSrc("triedenie")}>📦 Triedenie</button>
           <button className={src === "prijem" ? "on" : ""} onClick={() => setSrc("prijem")}>📥 Príjem</button>
+          <button className={src === "distribucia" ? "on" : ""} onClick={() => setSrc("distribucia")}>🔁 Distribúcia</button>
         </div>
+        {src === "distribucia" && <div className="note" style={{ marginTop: 8 }}>🔁 Distribúcia = preposielanie medzi skladmi (vrátane nočného batchu ~3:00). Objem riadi doplňovanie, nie zákaznícky dopyt – predikciu ber orientačnejšie než pri zákazníckych vznikoch.</div>}
         {src === "prijem" && <div className="note" style={{ marginTop: 8 }}>📥 Príjem je riadený harmonogramom dodávok, nie zákazníckym dopytom – predikcia je orientačná (typická odchýlka ±20–40 %). Presnejší odhad by dali avíza dodávok.</div>}
         {ghOk === false && <div className="note" style={{ marginTop: 8 }}>⚠️ GitHub zápis nie je nakonfigurovaný (env GH_TOKEN / GH_REPO) – zmeny platia len do obnovenia stránky.</div>}
       </div>
@@ -231,13 +243,13 @@ export default function Page() {
       </div>
 
       {tab === "pred" && <TabPredikcia D={D} uda={uda} />}
-      {tab === "zvoz" && <TabZvoz V={V} staticData={staticData} uda={uda} />}
+      {tab === "zvoz" && <TabZvoz V={V} staticData={staticData} uda={uda} backlogy={backlogy} />}
       {tab === "prepocet" && <TabPrepocet D={D} uda={uda} src={src} priebeh={priebeh} save={save} setPriebeh={setPriebeh} />}
       {tab === "vstup" && <TabVstup src={src} zaznamy={zaznamy} setZaznamy={setZaznamy} vynimky={vynimky} setVynimky={setVynimky} save={save} />}
-      {tab === "anom" && <TabAnomalie D={D} uda={uda} vynimky={vynimky} setVynimky={setVynimky} save={save} />}
+      {tab === "anom" && <TabAnomalie D={D} uda={uda} src={src} vynimky={vynimky} setVynimky={setVynimky} save={save} kpi={kpi} pomery={staticData.pomery} backlogy={backlogy} setBacklogy={setBacklogy} />}
       {tab === "udal" && <TabUdalosti D={D} uda={uda} setUdalosti={setUdalosti} save={save} />}
       {tab === "kvalita" && <TabKvalita staticData={staticData} />}
-      {tab === "kpi" && <TabKPI TP={TP} uda={uda} pomery={staticData.pomery} kpi={kpi} setKpi={setKpi} save={save} />}
+      {tab === "kpi" && <TabKPI TP={TP} uda={uda} pomery={staticData.pomery} kpi={kpi} setKpi={setKpi} save={save} backlogy={backlogy} />}
       {tab === "model" && <TabModel D={{ ...D, udaRef: uda }} />}
 
       {toast && <div className={`toast ${toast.err ? "err" : ""}`}>{toast.msg}</div>}
@@ -309,11 +321,13 @@ function TabPredikcia({ D, uda }) {
 }
 
 // ------------------------------------------------------------------ 🚚 Zvozy
-function TabZvoz({ V, staticData, uda }) {
+function TabZvoz({ V, staticData, uda, backlogy }) {
   const [datum, setDatum] = useState(today());
   const actual = useMemo(() => new Map(V.daily.map((r) => [r.datum, r.jbl])), [V.daily]);
   const vznikyOf = (d) => actual.get(d) ?? expectedFor(d, V.model, uda);
   const z = predictZvoz(datum, staticData.matica, V.prof, vznikyOf);
+  const blDen = (backlogy || []).filter((b) => b.na_datum === datum && (b.zdroj || "triedenie") !== "prijem")
+    .reduce((a, b) => a + +b.objem * ((b.zdroj || "triedenie") === "vzniky" ? 0.884 : 1), 0);
   const days = [0, 1, 2, 3].map((k) => addDays(datum, -k));
   return (
     <>
@@ -326,8 +340,11 @@ function TabZvoz({ V, staticData, uda }) {
         <div className="fld"><label>Deň zvozu</label><input type="date" value={datum} onChange={(e) => setDatum(e.target.value)} /></div>
       </div>
       <div className="grid g4">
-        <Card lbl={`Predikcia zvozov · ${fmtD(datum)} (${DNI[dow(datum)]})`} val={nf.format(z.total)} cls="blue" sub="jobline na expedíciu" />
-        {[0, 1, 2].map((k) => (
+        <Card lbl={`Predikcia zvozov · ${fmtD(datum)} (${DNI[dow(datum)]})`} val={nf.format(z.total + blDen)} cls="blue"
+          sub={blDen > 0 ? `vrátane +${nf.format(blDen)} preneseného backlogu` : "jobline na expedíciu"} />
+        <Card lbl={`Distribúcia (medzisklad) · ${fmtD(datum)}`} val={nf.format(distVol)}
+          sub={`${distActual.has(datum) ? "skutočnosť" : "predikcia"} · práca mimo zákazníckych zvozov`} />
+        {[0, 1].map((k) => (
           <Card key={k} lbl={`Z vznikov ${k === 0 ? "v deň zvozu" : fmtD(days[k])} (D${-k})`}
             val={nf.format(z.contrib[k])}
             sub={`${nf1.format((z.contrib[k] / z.total) * 100)} % objemu · vzniky: ${nf.format(vznikyOf(days[k]))}${actual.has(days[k]) ? " (skutočnosť)" : " (model)"}`} />
@@ -347,8 +364,10 @@ function TabZvoz({ V, staticData, uda }) {
         <div className="chartbox">
           <Bars color="var(--blue)" data={Array.from({ length: 7 }, (_, i) => {
             const d = addDays(today(), i);
-            return { x: `${fmtD(d)} ${DNI[dow(d)]}`, y: predictZvoz(d, staticData.matica, V.prof, vznikyOf).total };
+            const b7 = (backlog || []).filter((b) => b.datum === d && (b.zdroj || "triedenie") !== "prijem").reduce((a, b) => a + (+b.objem || 0), 0);
+            return { x: `${fmtD(d)} ${DNI[dow(d)]}`, y: predictZvoz(d, staticData.matica, V.prof, vznikyOf).total + b7, hl: b7 > 0 };
           })} />
+          <div className="legend"><span><i style={{ background: "var(--blue)" }} />predikcia</span><span><i style={{ background: "var(--amber)" }} />deň s preneseným backlogom</span></div>
         </div>
         <p className="note">Približne 88 % vzniknutých jobline reálne prejde zvozom (zvyšok sú interné/systémové joby bez expedície) –
           z toho ~26 % odíde v deň vzniku a ~65 % na druhý deň.</p>
@@ -454,27 +473,31 @@ function TabVstup({ src, zaznamy, setZaznamy, vynimky, setVynimky, save }) {
   const [anom, setAnom] = useState("Žiadna");
   const [poHodinach, setPoHodinach] = useState(false);
   const [hodiny, setHodiny] = useState(Array(24).fill(""));
+  const [anomHod, setAnomHod] = useState(Array(24).fill(false));
   const zazSrc = zaznamy.filter((z) => (z.zdroj || "triedenie") === src);
-  const COLS = ["datum", "hodina", "joblines", "poznamka", "zdroj"];
+  const COLS = ["datum", "hodina", "joblines", "poznamka", "zdroj", "anomalia"];
+  const VCOLS = ["datum", "typ", "popis", "hodiny"];
   const sumHodin = hodiny.reduce((a, v) => a + (+v || 0), 0);
+  const anomCnt = anomHod.filter(Boolean).length;
 
   const uloz = () => {
     const rest = zaznamy.filter((z) => !(z.datum === datum && (z.zdroj || "triedenie") === src));
     const pozn = anom !== "Žiadna" ? anom : "";
     let rows;
     if (poHodinach && sumHodin > 0) {
-      // hodiny v prevádzkovom poradí 06..05 -> reálna hodina; zápis pod prevádzkový deň
       rows = [...rest, ...OP_HOURS.map((h, i) => ({
         datum, hodina: h, joblines: +hodiny[i] || 0, poznamka: pozn, zdroj: src,
-      })).filter((r) => r.joblines > 0)];
+        anomalia: anom !== "Žiadna" && anomHod[i] ? 1 : "",
+      })).filter((r) => r.joblines > 0 || r.anomalia === 1)];
     } else {
-      rows = [...rest, { datum, hodina: "", joblines: total, poznamka: pozn, zdroj: src }];
+      rows = [...rest, { datum, hodina: "", joblines: total, poznamka: pozn, zdroj: src, anomalia: "" }];
     }
     save("zaznamy.csv", rows, COLS, `data: záznam JBL ${datum} (${src})`, setZaznamy);
     if (anom !== "Žiadna") {
+      const affReal = poHodinach ? OP_HOURS.filter((h, i) => anomHod[i]) : [];
       const vrest = vynimky.filter((v) => v.datum !== datum);
-      save("vynimky.csv", [...vrest, { datum, typ: anom, popis: "zadané pri vklade dát" }],
-        ["datum", "typ", "popis"], `data: výnimka ${datum} – ${anom}`, setVynimky);
+      save("vynimky.csv", [...vrest, { datum, typ: anom, popis: "zadané pri vklade dát", hodiny: affReal.join(",") }],
+        VCOLS, `data: výnimka ${datum} – ${anom}${affReal.length ? ` (${affReal.length} h)` : ""}`, setVynimky);
     }
   };
   const zmaz = (d) => {
@@ -485,9 +508,10 @@ function TabVstup({ src, zaznamy, setZaznamy, vynimky, setVynimky, save }) {
   return (
     <>
       <p className="note">Spätné zadanie skutočných jobline pre zdroj <b>{src}</b>. Záznam prepíše baseline pre daný deň.
-        Ak deň sprevádzala anomália, označ ju – deň sa vylúči z tréningu modelu.</p>
+        Anomália obmedzená na konkrétne hodiny deň z modelu nevyhodí – postihnuté hodiny sa dopočítajú z profilu
+        a deficit sa vyčísli ako backlog (záložka Anomálie).</p>
       <div className="frm">
-        <div className="fld"><label>Dátum</label><input type="date" value={datum} onChange={(e) => setDatum(e.target.value)} /></div>
+        <div className="fld"><label>Dátum (prevádzkový deň)</label><input type="date" value={datum} onChange={(e) => setDatum(e.target.value)} /></div>
         <div className="fld"><label>Joblines spolu (deň)</label>
           <input type="number" min="0" step="100" value={poHodinach ? sumHodin : (total || "")} disabled={poHodinach}
             onChange={(e) => setTotal(+e.target.value || 0)} /></div>
@@ -504,26 +528,41 @@ function TabVstup({ src, zaznamy, setZaznamy, vynimky, setVynimky, save }) {
         </label>
       </div>
       {poHodinach && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(92px, 1fr))", gap: 6, marginTop: 8 }}>
-          {OP_HOURS.map((h, i) => (
-            <div className="fld" key={h}>
-              <label>{String(h).padStart(2, "0")}:00{h < OP_START ? " (+1)" : ""}</label>
-              <input type="number" min="0" style={{ minWidth: 0 }} value={hodiny[i]}
-                onChange={(e) => setHodiny(hodiny.map((v, j) => (j === i ? e.target.value : v)))} />
-            </div>
-          ))}
-        </div>
+        <>
+          {anom !== "Žiadna" && <p className="note" style={{ color: "var(--amber)" }}>⚠️ Zaškrtni pri hodinách, ktoré boli ovplyvnené anomáliou „{anom}“ ({anomCnt} označených).</p>}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))", gap: 6, marginTop: 8 }}>
+            {OP_HOURS.map((h, i) => (
+              <div className="fld" key={h} style={anomHod[i] && anom !== "Žiadna" ? { outline: "1px solid var(--amber)", borderRadius: 8, padding: 4 } : { padding: 4 }}>
+                <label>{String(h).padStart(2, "0")}:00{h < OP_START ? " (+1)" : ""}</label>
+                <input type="number" min="0" style={{ minWidth: 0 }} value={hodiny[i]}
+                  onChange={(e) => setHodiny(hodiny.map((v, j) => (j === i ? e.target.value : v)))} />
+                {anom !== "Žiadna" && (
+                  <label style={{ fontSize: 10.5, color: anomHod[i] ? "var(--amber)" : "var(--muted)", display: "flex", gap: 4, alignItems: "center", cursor: "pointer" }}>
+                    <input type="checkbox" checked={anomHod[i]} onChange={(e) => setAnomHod(anomHod.map((v, j) => (j === i ? e.target.checked : v)))} />
+                    anomália
+                  </label>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       <div className="section">
         <h3>Zadané záznamy · {src} ({new Set(zazSrc.map((z) => z.datum)).size} dní)</h3>
         {zazSrc.length ? (
           <table className="t"><thead><tr><th>Dátum</th><th>Joblines</th><th>Anomália</th><th /></tr></thead>
-            <tbody>{[...zazSrc].sort((a, b) => (a.datum < b.datum ? 1 : -1)).map((z, i) => (
-              <tr key={i}><td>{fmtD(z.datum)}{z.datum.slice(0, 4)}</td><td>{nf.format(+z.joblines)}</td>
-                <td>{z.poznamka ? <span className="pill amber">{z.poznamka}</span> : "–"}</td>
-                <td><button className="btn ghost" onClick={() => zmaz(z.datum)}>🗑️</button></td></tr>
-            ))}</tbody></table>
+            <tbody>{[...new Set(zazSrc.map((z) => z.datum))].sort().reverse().map((d) => {
+              const rs = zazSrc.filter((z) => z.datum === d);
+              const suma = rs.reduce((a, z) => a + (+z.joblines || 0), 0);
+              const an = rs.find((z) => z.poznamka)?.poznamka;
+              const anH = rs.filter((z) => String(z.anomalia) === "1").length;
+              return (
+                <tr key={d}><td>{fmtD(d)}{d.slice(0, 4)}</td><td>{nf.format(suma)}</td>
+                  <td>{an ? <span className="pill amber">{an}{anH ? ` · ${anH} h` : ""}</span> : "–"}</td>
+                  <td><button className="btn ghost" onClick={() => zmaz(d)}>🗑️</button></td></tr>
+              );
+            })}</tbody></table>
         ) : <p className="note">Zatiaľ žiadne používateľské záznamy – model beží na baseline dátach.</p>}
       </div>
     </>
@@ -531,12 +570,17 @@ function TabVstup({ src, zaznamy, setZaznamy, vynimky, setVynimky, save }) {
 }
 
 // -------------------------------------------------------- ⚠️ Anomálie
-function TabAnomalie({ D, uda, vynimky, setVynimky, save }) {
+function TabAnomalie({ D, uda, src, vynimky, setVynimky, save, kpi, pomery, backlogy, setBacklogy }) {
+  const BCOLS = ["z_datum", "na_datum", "objem", "zdroj", "poznamka"];
   const [thr, setThr] = useState(25);
   const [datum, setDatum] = useState(addDays(today(), -1));
   const [typ, setTyp] = useState(TYPY_VYNIMIEK[0]);
   const [popis, setPopis] = useState("");
-  const { daily, model } = D;
+  const [selHod, setSelHod] = useState([]);
+  const [blDatum, setBlDatum] = useState("");
+  const [blCiel, setBlCiel] = useState("");
+  const { daily, model, prof, hourly, part } = D;
+  const VCOLS = ["datum", "typ", "popis", "hodiny"];
   const vmap = new Map(vynimky.map((v) => [v.datum, v]));
   const anom = daily
     .map((r) => ({ ...r, ocak: expectedFor(r.datum, model, uda) }))
@@ -547,9 +591,77 @@ function TabAnomalie({ D, uda, vynimky, setVynimky, save }) {
 
   const uloz = () => {
     const rest = vynimky.filter((v) => v.datum !== datum);
-    save("vynimky.csv", [...rest, { datum, typ, popis }], ["datum", "typ", "popis"], `data: výnimka ${datum} – ${typ}`, setVynimky);
+    save("vynimky.csv", [...rest, { datum, typ, popis, hodiny: [...selHod].sort((a, b) => a - b).join(",") }],
+      VCOLS, `data: výnimka ${datum} – ${typ}${selHod.length ? ` (${selHod.length} h)` : ""}`, setVynimky);
   };
-  const zmaz = (d) => save("vynimky.csv", vynimky.filter((v) => v.datum !== d), ["datum", "typ", "popis"], `data: odstránená výnimka ${d}`, setVynimky);
+  const zmaz = (d) => save("vynimky.csv", vynimky.filter((v) => v.datum !== d), VCOLS, `data: odstránená výnimka ${d}`, setVynimky);
+  const togHod = (h) => setSelHod(selHod.includes(h) ? selHod.filter((x) => x !== h) : [...selHod, h]);
+
+  // ---- backlog: čiastočné výnimky s hodinami
+  const partSorted = [...part].sort((a, b) => (a.datum < b.datum ? 1 : -1));
+  const blSel = partSorted.find((p) => p.datum === blDatum) || partSorted[0];
+  let bl = null;
+  if (blSel) {
+    const adjRow = (D.dailyAdj || daily).find((r) => r.datum === blSel.datum);
+    const clean = adjRow ? adjRow.jbl : expectedFor(blSel.datum, model, uda);
+    bl = { ...backlogForDay(blSel.datum, blSel.hodiny, hourly, clean, prof), clean, vyn: blSel };
+  }
+  const vykonPre = (p, d) => {
+    const o = (kpi || []).find((k) => k.proces === p && k.datum === d);
+    if (o && +o.vykon > 0) return +o.vykon;
+    const g = (kpi || []).find((k) => k.proces === p && !k.datum);
+    return g && +g.vykon > 0 ? +g.vykon : 0;
+  };
+  const blProcesy = src === "prijem" ? [["Príjem", 1]]
+    : [["Pick", (pomery?.Pick ?? 1)], ["Pack", (pomery?.Pack ?? 1)], ["Sort", 1]];
+  const blScale = 1; // celý backlog je práca, ktorá sa musí spraviť (zákaznícka aj distribučná)
+  const blHodiny = bl ? blProcesy.map(([p, r]) => {
+    const v = vykonPre(p, bl.vyn.datum);
+    return { p, objem: bl.backlog * r * blScale, vykon: v, hod: v > 0 ? (bl.backlog * r * blScale) / v : null };
+  }) : [];
+  const blSpolu = blHodiny.reduce((a, x) => a + (x.hod || 0), 0);
+
+  // presun backlogu na najbližšie zvozové sloty: zmeškaný slot -> rovnaká hodina +1 deň
+  // (63,6 % objemu reálne odchádza v rovnakej hodine slotu, len v iný deň)
+  const blCiele = (() => {
+    if (!bl || !slotMap) return [];
+    const maxAffIdx = Math.max(...bl.vyn.hodiny.map((h) => (h - OP_START + 24) % 24));
+    const acc = new Map(); // `${datum}|${zh}` -> objem
+    for (const d of bl.detail) {
+      if (d.backlog <= 0) continue;
+      const sm = slotMap[String(d.hodina)] || [];
+      const tot = sm.reduce((a, s) => a + s.podiel, 0) || 1;
+      for (const s of sm) {
+        let off = s.off;
+        const slotIdx = (s.zh - OP_START + 24) % 24;
+        if (off === 0 && slotIdx <= maxAffIdx) off = 1; // slot padol do/pred anomáliu -> ďalší deň
+        const cielDatum = addDays(bl.vyn.datum, off);
+        const k = `${cielDatum}|${s.zh}`;
+        acc.set(k, (acc.get(k) || 0) + d.backlog * (s.podiel / tot));
+      }
+    }
+    return [...acc.entries()].map(([k, o]) => {
+      const [datum, zh] = k.split("|");
+      return { datum, zh: +zh, objem: o };
+    }).filter((x) => x.objem >= 20).sort((a, b) => (a.datum + String(a.zh).padStart(2, "0") < b.datum + String(b.zh).padStart(2, "0") ? -1 : 1));
+  })();
+
+  const prenesBacklog = () => {
+    if (!bl) return;
+    const popis = `z ${bl.vyn.datum} (${bl.vyn.typ})`;
+    const perDay = new Map();
+    for (const c of blCiele) perDay.set(c.datum, (perDay.get(c.datum) || 0) + c.objem);
+    const zdrojKey = src === "prijem" ? "prijem" : "triedenie";
+    const rest = backlog.filter((b) => !(b.popis === popis && (b.zdroj || "triedenie") === zdrojKey));
+    const rows = [...rest, ...[...perDay.entries()].map(([datum, o]) => ({
+      datum, objem: Math.round(o * blScale), zdroj: zdrojKey, popis,
+    }))];
+    save("backlog.csv", rows, ["datum", "objem", "zdroj", "popis"], `data: presun backlogu ${popis}`, setBacklog);
+  };
+  const zmazBacklog = (i) => {
+    const rows = backlog.filter((_, j) => j !== i);
+    save("backlog.csv", rows, ["datum", "objem", "zdroj", "popis"], "data: odstránený backlog", setBacklog);
+  };
 
   return (
     <>
@@ -557,14 +669,14 @@ function TabAnomalie({ D, uda, vynimky, setVynimky, save }) {
         <div className="fld"><label>Prah odchýlky: ±{thr} %</label><input type="range" min="10" max="50" value={thr} onChange={(e) => setThr(+e.target.value)} /></div>
       </div>
       <p className="note">Nájdených <b>{anom.length}</b> dní mimo ±{thr} % od modelu, z toho <span className="bad">{bez} bez priradenej výnimky</span>.
-        Deň s výnimkou sa vylúči z tréningu – anomália tak neskreslí predikciu.</p>
+        Výnimka na celý deň sa z tréningu vylúči; výnimka obmedzená na hodiny deň opraví dopočtom a zvyšok dňa trénuje ďalej.</p>
       <table className="t"><thead><tr><th>Dátum</th><th>Skutočnosť</th><th>Očakávané</th><th>Odchýlka</th><th>Výnimka</th></tr></thead>
         <tbody>{anom.slice(0, 40).map((r) => (
           <tr key={r.datum}>
             <td>{fmtD(r.datum)}{r.datum.slice(0, 4)} {DNI[dow(r.datum)]}</td>
             <td>{nf.format(r.jbl)}</td><td>{nf.format(r.ocak)}</td>
             <td className={r.dev < 0 ? "bad" : "accent"}>{(r.dev * 100).toFixed(1)} %</td>
-            <td>{vmap.has(r.datum) ? <span className="pill gray">{vmap.get(r.datum).typ}</span> : <span className="pill red">nepriradená</span>}</td>
+            <td>{vmap.has(r.datum) ? <span className="pill gray">{vmap.get(r.datum).typ}{vmap.get(r.datum).hodiny ? ` · h ${vmap.get(r.datum).hodiny}` : ""}</span> : <span className="pill red">nepriradená</span>}</td>
           </tr>
         ))}</tbody></table>
 
@@ -577,14 +689,112 @@ function TabAnomalie({ D, uda, vynimky, setVynimky, save }) {
           <div className="fld"><label>Popis (voliteľné)</label><input value={popis} onChange={(e) => setPopis(e.target.value)} /></div>
           <button className="btn" onClick={uloz}>⚠️ Uložiť výnimku</button>
         </div>
+        <p className="note" style={{ marginTop: 8 }}>Postihnuté hodiny (voliteľné – nič neoznačené = celý deň):</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+          {OP_HOURS.map((h) => (
+            <button key={h} onClick={() => togHod(h)}
+              style={{ padding: "5px 9px", borderRadius: 7, border: "1px solid var(--border)", cursor: "pointer", fontSize: 12, fontFamily: "var(--mono)",
+                background: selHod.includes(h) ? "var(--amber)" : "transparent", color: selHod.includes(h) ? "#1b1400" : "var(--muted)" }}>
+              {String(h).padStart(2, "0")}{h < OP_START ? "⁺¹" : ""}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {partSorted.length > 0 && (
+        <div className="section">
+          <h3>Backlog z hodinových anomálií</h3>
+          <div className="frm" style={{ marginBottom: 8 }}>
+            <div className="fld"><label>Výnimka</label>
+              <select value={blSel?.datum || ""} onChange={(e) => setBlDatum(e.target.value)}>
+                {partSorted.map((p) => <option key={p.datum} value={p.datum}>{fmtD(p.datum)}{p.datum.slice(0, 4)} · {p.typ} · h {p.hodiny.join(",")}</option>)}
+              </select></div>
+          </div>
+          {bl && (
+            <>
+              <div className="grid g4">
+                <Card lbl="Backlog (nespracované JBL)" val={nf.format(bl.backlog)} cls="warn"
+                  sub={bl.maHodinoveData ? `oproti čistému očakávaniu ${nf.format(bl.clean)}` : "bez hodinových dát – ráta sa plný výpadok hodín"} />
+                <Card lbl="Postihnuté hodiny" val={bl.vyn.hodiny.length} sub={bl.vyn.hodiny.map((h) => String(h).padStart(2, "0")).join(", ")} />
+                <Card lbl="Človekohodiny na dobehnutie" val={blSpolu > 0 ? nf1.format(blSpolu) + " h" : "–"} cls="accent"
+                  sub={blSpolu > 0 ? `≈ ${nf1.format(blSpolu / 8)} ľudí na 8h zmenu navyše` : "doplň výkony v záložke KPI"} />
+                <Card lbl="Dopad" val="+1 deň" sub="objem stráca prioritu a čaká na nasledujúci zvoz – práca nezmizla, len sa posunula" />
+              </div>
+              <div className="frm" style={{ marginTop: 10 }}>
+                <div className="fld"><label>Preniesť backlog na deň</label>
+                  <input type="date" value={blCiel || addDays(bl.vyn.datum, 1)} onChange={(e) => setBlCiel(e.target.value)} /></div>
+                <button className="btn" disabled={backlogy.some((b) => b.z_datum === bl.vyn.datum && (b.zdroj || "triedenie") === src)}
+                  onClick={() => {
+                    const rows = [...backlogy, { z_datum: bl.vyn.datum, na_datum: blCiel || addDays(bl.vyn.datum, 1),
+                      objem: Math.round(bl.backlog), zdroj: src, poznamka: bl.vyn.typ }];
+                    save("backlog.csv", rows, BCOLS, `data: backlog ${bl.vyn.datum} -> ${blCiel || addDays(bl.vyn.datum, 1)}`, setBacklogy);
+                  }}>
+                  ➡️ Preniesť do plánu dňa
+                </button>
+                {backlogy.some((b) => b.z_datum === bl.vyn.datum && (b.zdroj || "triedenie") === src) &&
+                  <span className="note" style={{ alignSelf: "center" }}>✓ už prenesené</span>}
+              </div>
+              <p className="note">Prenesený backlog sa pripočíta k objemu cieľového dňa v záložkách KPI (človekohodiny) a Zvozy.
+                Default je nasledujúci prevádzkový deň; pri linkách s dvoma zvozmi denne môže časť odísť ešte v ten istý deň – uprav cieľ podľa harmonogramu zvozov.</p>
+              <table className="t" style={{ marginTop: 10 }}><thead><tr><th>Proces</th><th>Backlog objem</th><th>Výkon (JBL/os/h)</th><th>Hodiny navyše</th></tr></thead>
+                <tbody>{blHodiny.map((x) => (
+                  <tr key={x.p}><td style={{ fontFamily: "var(--sans)" }}>{x.p}</td><td>{nf.format(x.objem)}</td>
+                    <td>{x.vykon || "–"}</td><td className="accent" style={{ fontWeight: 650 }}>{x.hod != null ? nf1.format(x.hod) + " h" : "chýba výkon"}</td></tr>
+                ))}</tbody></table>
+              {src === "vzniky" && <p className="note">Backlog zahŕňa aj distribučné jobline (medzisklad, ~12 % objemu) – tá práca sa musí spraviť tak či tak; na zvozové sloty nižšie sa viaže expedičná časť, distribučná sa dobieha nasledujúci deň mimo zákazníckych zvozov.</p>}
+
+              <h3 style={{ marginTop: 16 }}>Presun na najbližšie zvozy</h3>
+              <p className="note">Nespracovaný objem stráca prioritu a čaká na ďalší zvoz svojej linky – zmeškaný slot ide na rovnakú hodinu nasledujúceho dňa (podľa dát 64 % objemu drží hodinu slotu). Rozpad podľa cieľových zvozov:</p>
+              <table className="t"><thead><tr><th>Cieľový deň</th><th>Zvoz (slot)</th><th>Objem</th></tr></thead>
+                <tbody>{blCiele.slice(0, 12).map((c, i) => (
+                  <tr key={i}><td>{fmtD(c.datum)}{c.datum.slice(0, 4)} {DNI[dow(c.datum)]}{c.datum === addDays(bl.vyn.datum, 1) ? " (D+1)" : c.datum === bl.vyn.datum ? " (D)" : ""}</td>
+                    <td>{String(c.zh).padStart(2, "0")}:00</td><td>{nf.format(c.objem)}</td></tr>
+                ))}</tbody></table>
+              <div className="frm" style={{ marginTop: 10 }}>
+                <button className="btn" onClick={prenesBacklog}>📤 Preniesť backlog do plánu ({[...new Set(blCiele.map((c) => c.datum))].map((d) => fmtD(d)).join(", ")})</button>
+              </div>
+              <p className="note">Prenesený backlog sa pripočíta k objemom v záložkách KPI (človekohodiny) a Zvozy pre cieľové dni.</p>
+            </>
+          )}
+        </div>
+      )}
+
+      {backlog.length > 0 && (
+        <div className="section">
+          <h3>Prenesený backlog ({backlog.length})</h3>
+          <table className="t"><thead><tr><th>Cieľový deň</th><th>Objem</th><th>Zdroj</th><th>Pôvod</th><th /></tr></thead>
+            <tbody>{backlog.map((b, i) => (
+              <tr key={i}><td>{fmtD(b.datum)}{String(b.datum).slice(0, 4)}</td><td>{nf.format(+b.objem)}</td>
+                <td><span className="pill gray">{b.zdroj || "triedenie"}</span></td>
+                <td style={{ fontFamily: "var(--sans)" }}>{b.popis}</td>
+                <td><button className="btn ghost" onClick={() => zmazBacklog(i)}>🗑️</button></td></tr>
+            ))}</tbody></table>
+        </div>
+      )}
+
+      {backlogy.length > 0 && (
+        <div className="section">
+          <h3>Prenesené backlogy ({backlogy.length})</h3>
+          <table className="t"><thead><tr><th>Z dňa</th><th>Na deň</th><th>Objem</th><th>Zdroj</th><th>Pôvod</th><th /></tr></thead>
+            <tbody>{[...backlogy].sort((a, b) => (a.na_datum < b.na_datum ? 1 : -1)).map((b, i) => (
+              <tr key={i}><td>{fmtD(b.z_datum)}</td><td className="warn">{fmtD(b.na_datum)}</td><td>{nf.format(+b.objem)}</td>
+                <td><span className="pill gray">{b.zdroj}</span></td><td style={{ fontFamily: "var(--sans)" }}>{b.poznamka}</td>
+                <td><button className="btn ghost" onClick={() => {
+                  const rows = backlogy.filter((_, j) => j !== i);
+                  save("backlog.csv", rows, BCOLS, `data: zrušený backlog ${b.z_datum}`, setBacklogy);
+                }}>🗑️</button></td></tr>
+            ))}</tbody></table>
+        </div>
+      )}
 
       {vynimky.length > 0 && (
         <div className="section">
           <h3>Evidované výnimky ({vynimky.length})</h3>
-          <table className="t"><thead><tr><th>Dátum</th><th>Typ</th><th>Popis</th><th /></tr></thead>
+          <table className="t"><thead><tr><th>Dátum</th><th>Typ</th><th>Hodiny</th><th>Popis</th><th /></tr></thead>
             <tbody>{[...vynimky].sort((a, b) => (a.datum < b.datum ? 1 : -1)).map((v) => (
-              <tr key={v.datum}><td>{fmtD(v.datum)}{v.datum.slice(0, 4)}</td><td>{v.typ}</td><td style={{ fontFamily: "var(--sans)" }}>{v.popis}</td>
+              <tr key={v.datum}><td>{fmtD(v.datum)}{v.datum.slice(0, 4)}</td><td>{v.typ}</td>
+                <td>{v.hodiny ? <span className="pill amber">{v.hodiny}</span> : <span className="pill gray">celý deň</span>}</td>
+                <td style={{ fontFamily: "var(--sans)" }}>{v.popis}</td>
                 <td><button className="btn ghost" onClick={() => zmaz(v.datum)}>🗑️</button></td></tr>
             ))}</tbody></table>
         </div>
@@ -681,7 +891,7 @@ function TabKvalita({ staticData }) {
   const dni = [...new Set(rows.map((r) => r.datum))].sort();
   const lastDay = dni[dni.length - 1];
   const byProc = (p) => rows.filter((r) => r.proces === p);
-  const med = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? (s.length % 2 ? s[s.length >> 1] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : 0; };
+  const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
   const qClass = (v) => (v >= 97 ? "accent" : v >= 92 ? "warn" : "bad");
 
   const sel = byProc(proces).slice(-range);
@@ -689,18 +899,18 @@ function TabKvalita({ staticData }) {
 
   return (
     <>
-      <p className="note">Kvalita = podiel jobline dokončených v limite, po prevádzkových dňoch 06:00–06:00 (zdroj QUALITY export).</p>
+      <p className="note">Kvalita = podiel jobline dokončených v limite, po prevádzkových dňoch 06:00–06:00. Všetky agregáty sú <b>priemerom denných kvalít</b> (každý deň má rovnakú váhu), nie podielom z celkového objemu.</p>
       <div className="grid g4">
         {procesy.map((p) => {
           const d = byProc(p);
           const last = d.find((r) => r.datum === lastDay);
           const v = last ? kv(last) : null;
-          const m7 = med(d.slice(-8, -1).map(kv));
+          const m7 = avg(d.slice(-8, -1).map(kv));
           return (
             <div key={p} className="card" onClick={() => setProces(p)} style={{ cursor: "pointer", outline: p === proces ? "1px solid var(--green)" : "none" }}>
               <div className="lbl">{p}</div>
               <div className={`val ${v != null ? qClass(v) : ""}`}>{v != null ? v.toFixed(1) + " %" : "–"}</div>
-              <div className="sub">{fmtD(lastDay)} · medián 7 dní {m7.toFixed(1)} % {v != null ? (v >= m7 ? "▲" : "▼") : ""} · {last ? nf.format(+last.celkem) : 0} JBL</div>
+              <div className="sub">{fmtD(lastDay)} · priemer 7 dní {m7.toFixed(1)} % {v != null ? (v >= m7 ? "▲" : "▼") : ""} · {last ? nf.format(+last.celkem) : 0} JBL</div>
             </div>
           );
         })}
@@ -715,7 +925,7 @@ function TabKvalita({ staticData }) {
           <div className="fld"><label>Proces</label>
             <select value={proces} onChange={(e) => setProces(e.target.value)}>{procesy.map((p) => <option key={p}>{p}</option>)}</select></div>
         </div>
-        <h3>Kvalita · {proces}</h3>
+        <h3>Kvalita · {proces} <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 13 }}>· priemer denných kvalít v období: {avg(sel.map(kv)).toFixed(1)} %</span></h3>
         <div className="chartbox">
           <Lines height={230} xLabels={sel.map((r) => fmtD(r.datum))} series={[
             { color: "var(--green)", points: sel.map(kv) },
@@ -747,71 +957,98 @@ function TabKvalita({ staticData }) {
 }
 
 // ------------------------------------------------------------ 🧮 KPI
-function TabKPI({ TP, uda, pomery, kpi, setKpi, save }) {
+function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy }) {
   const PROCESY = ["Príjem", "Pick", "Pack", "Sort"];
   const [datum, setDatum] = useState(today());
-  const [vykony, setVykony] = useState(null); // {proces: string}
-  const [override, setOverride] = useState({}); // ručný objem
+  const [glob, setGlob] = useState(null);   // plošné výkony {proces: str}
+  const [denne, setDenne] = useState(null); // denné overridy {proces: str}
+  const [override, setOverride] = useState({});
   const [selProc, setSelProc] = useState("Pick");
+  const COLS = ["proces", "vykon", "datum"];
 
-  const vyk = vykony ?? Object.fromEntries(PROCESY.map((p) => {
-    const r = kpi.find((k) => k.proces === p);
+  const globVal = glob ?? Object.fromEntries(PROCESY.map((p) => {
+    const r = kpi.find((k) => k.proces === p && !k.datum);
     return [p, r ? String(r.vykon) : ""];
   }));
-  const setV = (p, val) => setVykony({ ...vyk, [p]: val });
+  const denVal = denne ?? Object.fromEntries(PROCESY.map((p) => {
+    const r = kpi.find((k) => k.proces === p && k.datum === datum);
+    return [p, r ? String(r.vykon) : ""];
+  }));
+  const vykEff = (p) => (+denVal[p] > 0 ? +denVal[p] : +globVal[p] > 0 ? +globVal[p] : 0);
 
+  const ulozVsetko = () => {
+    const rows = [];
+    for (const p of PROCESY) if (globVal[p] !== "") rows.push({ proces: p, vykon: globVal[p], datum: "" });
+    for (const k of kpi) if (k.datum && k.datum !== datum) rows.push(k); // ostatné denné overridy zachovaj
+    for (const p of PROCESY) if (denVal[p] !== "") rows.push({ proces: p, vykon: denVal[p], datum });
+    save("kpi.csv", rows, COLS, `data: KPI výkony (plošné + ${datum})`, setKpi);
+  };
+
+  const blNaDen = (backlogy || []).filter((b) => b.na_datum === datum);
+  const blPre = (p) => blNaDen.reduce((a, b) => {
+    const zdr = b.zdroj || "triedenie";
+    if (p === "Príjem") return a + (zdr === "prijem" ? +b.objem : 0);
+    if (zdr === "prijem") return a;
+    return a + +b.objem * (pomery[p] ?? 1) * (zdr === "vzniky" ? 0.884 : 1);
+  }, 0);
   const objemAuto = (p) => {
-    if (p === "Príjem") return expectedFor(datum, TP.prijem.model, uda);
-    return expectedFor(datum, TP.triedenie.model, uda) * (pomery[p] ?? 1);
+    const base = p === "Príjem" ? expectedFor(datum, TP.prijem.model, uda)
+      : expectedFor(datum, TP.triedenie.model, uda) * (pomery[p] ?? 1);
+    return base + blPre(p);
   };
   const objem = (p) => (override[p] !== undefined && override[p] !== "" ? +override[p] : objemAuto(p));
-  const hodiny = (p) => (+vyk[p] > 0 ? objem(p) / +vyk[p] : null);
+  const hodiny = (p) => (vykEff(p) > 0 ? objem(p) / vykEff(p) : null);
   const spolu = PROCESY.reduce((a, p) => a + (hodiny(p) || 0), 0);
-
-  const ulozVykony = () => {
-    const rows = PROCESY.filter((p) => vyk[p] !== "").map((p) => ({ proces: p, vykon: vyk[p] }));
-    save("kpi.csv", rows, ["proces", "vykon"], "data: KPI výkony procesov", setKpi);
-  };
 
   const prof = selProc === "Príjem" ? TP.prijem.prof : TP.triedenie.prof;
   const p24 = prof[String(dow(datum) >= 5)];
-  const selVyk = +vyk[selProc] > 0 ? +vyk[selProc] : null;
+  const selVyk = vykEff(selProc) || null;
+  const inp = { width: 90, background: "#0d1117", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 8px", fontFamily: "var(--mono)" };
 
   return (
     <>
       <p className="note">
-        Zadaj hodinový výkon (JBL na osobu a hodinu) pre každý proces – appka z predikovaného objemu
-        vypočíta potrebné človekohodiny na prevádzkový deň. Objem sa predvypĺňa z modelu
-        (Pick/Pack/Sort z triedenia × pomer procesov za 60 dní, Príjem z vlastného modelu) a dá sa ručne prepísať.
+        <b>Plošné výkony</b> platia vždy; <b>denná úprava</b> ich pre vybraný deň prepíše (napr. zaučanie, oslabená zmena).
+        Človekohodiny = objem ÷ efektívny výkon. Objemy sa predvypĺňajú z modelu a dajú sa prepísať.
       </p>
       <div className="frm" style={{ marginBottom: 12 }}>
-        <div className="fld"><label>Prevádzkový deň</label><input type="date" value={datum} onChange={(e) => setDatum(e.target.value)} /></div>
-        <button className="btn" onClick={ulozVykony}>💾 Uložiť výkony</button>
+        <div className="fld"><label>Prevádzkový deň</label>
+          <input type="date" value={datum} onChange={(e) => { setDatum(e.target.value); setDenne(null); setOverride({}); }} /></div>
+        <button className="btn" onClick={ulozVsetko}>💾 Uložiť výkony</button>
       </div>
 
+      {(bkTried > 0 || bkPrij > 0) && (
+        <p className="note" style={{ color: "var(--amber)" }}>
+          📤 V objemoch dňa {fmtD(datum)} je zahrnutý prenesený backlog: {bkTried > 0 ? `${nf.format(bkTried)} JBL (triedenie)` : ""}{bkTried > 0 && bkPrij > 0 ? " + " : ""}{bkPrij > 0 ? `${nf.format(bkPrij)} JBL (príjem)` : ""} – spravuje sa v záložke Anomálie.
+        </p>
+      )}
       <table className="t">
-        <thead><tr><th>Proces</th><th>Objem (JBL)</th><th>Výkon (JBL/os./hod)</th><th>Človekohodiny</th></tr></thead>
+        <thead><tr><th>Proces</th><th>Plošný výkon</th><th>Úprava pre {fmtD(datum)}</th><th>Efektívny</th><th>Objem (JBL)</th><th>Človekohodiny</th></tr></thead>
         <tbody>
           {PROCESY.map((p) => (
             <tr key={p}>
               <td style={{ fontFamily: "var(--sans)" }}>{p}{p !== "Príjem" && pomery[p] && pomery[p] !== 1 ? ` (×${pomery[p].toFixed(2)})` : ""}</td>
-              <td><input type="number" min="0" step="100" style={{ width: 110, background: "#0d1117", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 8px", fontFamily: "var(--mono)" }}
+              <td><input type="number" min="0" placeholder="zadaj" style={inp} value={globVal[p]}
+                onChange={(e) => setGlob({ ...globVal, [p]: e.target.value })} /></td>
+              <td><input type="number" min="0" placeholder="–" style={{ ...inp, borderColor: denVal[p] !== "" ? "var(--amber)" : "var(--border)" }} value={denVal[p]}
+                onChange={(e) => setDenne({ ...denVal, [p]: e.target.value })} /></td>
+              <td className={denVal[p] !== "" ? "warn" : ""} style={{ fontWeight: 650 }}>{vykEff(p) || "–"}</td>
+              <td><input type="number" min="0" step="100" style={{ ...inp, width: 110 }}
                 value={override[p] !== undefined && override[p] !== "" ? override[p] : Math.round(objemAuto(p))}
                 onChange={(e) => setOverride({ ...override, [p]: e.target.value })} /></td>
-              <td><input type="number" min="0" step="1" placeholder="zadaj" style={{ width: 90, background: "#0d1117", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 8px", fontFamily: "var(--mono)" }}
-                value={vyk[p]} onChange={(e) => setV(p, e.target.value)} /></td>
               <td className={hodiny(p) != null ? "accent" : ""} style={{ fontWeight: 650 }}>
                 {hodiny(p) != null ? nf1.format(hodiny(p)) + " h" : "–"}</td>
             </tr>
           ))}
           <tr>
-            <td style={{ fontFamily: "var(--sans)", fontWeight: 650 }}>Spolu</td>
-            <td>{nf.format(PROCESY.reduce((a, p) => a + objem(p), 0))}</td><td />
+            <td style={{ fontFamily: "var(--sans)", fontWeight: 650 }}>Spolu</td><td /><td /><td />
+            <td>{nf.format(PROCESY.reduce((a, p) => a + objem(p), 0))}</td>
             <td className="accent" style={{ fontWeight: 700 }}>{spolu > 0 ? nf1.format(spolu) + " h" : "–"}</td>
           </tr>
         </tbody>
       </table>
-      <p className="note">Človekohodiny = objem ÷ výkon. Pri 8-hodinových zmenách: {spolu > 0 ? `${nf1.format(spolu)} h ≈ ${nf1.format(spolu / 8)} ľudí na deň (bez prestávok a réžie)` : "doplň výkony pre prepočet"}.</p>
+      {blNaDen.length > 0 && <p className="note" style={{ color: "var(--amber)" }}>⚠️ Objemy zahŕňajú prenesený backlog z {blNaDen.map((b) => fmtD(b.z_datum)).join(", ")} (spolu {nf.format(blNaDen.reduce((a, b) => a + +b.objem, 0))} JBL v zdrojových jednotkách).</p>}
+      <p className="note">Pri 8-hodinových zmenách: {spolu > 0 ? `${nf1.format(spolu)} h ≈ ${nf1.format(spolu / 8)} ľudí na deň (bez prestávok a réžie)` : "doplň výkony pre prepočet"}. Denné úpravy sa ukladajú spolu s plošnými tlačidlom Uložiť výkony.</p>
 
       <div className="section">
         <div className="frm" style={{ marginBottom: 8 }}>
@@ -822,7 +1059,7 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save }) {
         {selVyk ? (
           <div className="chartbox">
             <Bars color="var(--blue)" data={OP_HOURS.map((h) => ({ x: String(h).padStart(2, "0"), y: (objem(selProc) * p24[h]) / selVyk }))} />
-            <p className="note">Hodinový objem ÷ výkon = počet ľudí potrebných v danej hodine (profil {selProc === "Príjem" ? "príjmu" : "triedenia"}, prevádzkový deň).</p>
+            <p className="note">Hodinový objem ÷ efektívny výkon = počet ľudí v danej hodine (profil {selProc === "Príjem" ? "príjmu" : "triedenia"}, prevádzkový deň).</p>
           </div>
         ) : <p className="note">Zadaj výkon procesu {selProc}, aby sa zobrazil hodinový plán.</p>}
       </div>
@@ -839,7 +1076,7 @@ function TabModel({ D }) {
     setBtBusy(true);
     // výpočet mimo klik-handlera, nech UI stihne prekresliť
     setTimeout(() => {
-      setBt(backtest(D.daily, D.vynD, D.udaRef || [], 30));
+      setBt(backtest(D.dailyAdj || D.daily, D.btExcl || D.vynD, D.udaRef || [], 30));
       setBtBusy(false);
     }, 30);
   };
