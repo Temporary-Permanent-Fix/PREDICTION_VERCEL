@@ -863,75 +863,93 @@ function TabKvalita({ staticData }) {
   const rows = staticData.kvalitaDenne || [];
   const hod = staticData.kvalitaHodiny;
   const procesy = [...new Set(rows.map((r) => r.proces))].sort();
-  const [proces, setProces] = useState(procesy[0] || "");
-  const [range, setRange] = useState(30);
+  const [open, setOpen] = useState(() => new Set());
+  const [selProc, setSelProc] = useState("");
   if (!rows.length) return <p className="note">Chýba súbor `kvalita_denne.csv` – vygeneruj ho cez `tools/quality_to_data.py`.</p>;
 
   const kv = (r) => (1 - (+r.pozde || 0) / (+r.celkem || 1)) * 100;
-  const dni = [...new Set(rows.map((r) => r.datum))].sort();
-  const lastDay = dni[dni.length - 1];
-  const byProc = (p) => rows.filter((r) => r.proces === p);
   const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
   const qClass = (v) => (v >= 97 ? "accent" : v >= 92 ? "warn" : "bad");
+  const MES = ["jan", "feb", "mar", "apr", "máj", "jún", "júl", "aug", "sep", "okt", "nov", "dec"];
+  const monday = (ds) => { const d = new Date(ds + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
+  const stvrtrok = (ds) => `${ds.slice(0, 4)} · Q${Math.floor((+ds.slice(5, 7) - 1) / 3) + 1}`;
+  const mesiac = (ds) => `${MES[+ds.slice(5, 7) - 1]} ${ds.slice(0, 4)}`;
 
-  const sel = byProc(proces).slice(-range);
-  const worst = [...byProc(proces)].slice(-range).sort((a, b) => kv(a) - kv(b)).slice(0, 8);
+  const tog = (k) => setOpen((o) => { const n = new Set(o); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const agg = (days) => ({
+    kvA: avg(days.map(kv)),
+    jbl: days.reduce((a, r) => a + +r.celkem, 0),
+    pozde: days.reduce((a, r) => a + +r.pozde, 0),
+    n: days.length,
+  });
+  const group = (days, keyFn) => {
+    const m = new Map();
+    for (const r of days) { const k = keyFn(r.datum); if (!m.has(k)) m.set(k, []); m.get(k).push(r); }
+    return [...m.entries()];
+  };
+
+  const Radek = ({ k, label, days, lvl, leaf }) => {
+    const a = agg(days);
+    const isOpen = open.has(k);
+    return (
+      <>
+        <tr onClick={() => !leaf && tog(k)} style={{ cursor: leaf ? "default" : "pointer" }}>
+          <td style={{ paddingLeft: 10 + lvl * 22, fontFamily: "var(--sans)", whiteSpace: "nowrap" }}>
+            {!leaf && <span style={{ display: "inline-block", width: 16, color: "var(--muted)" }}>{isOpen ? "▾" : "▸"}</span>}
+            {leaf && <span style={{ display: "inline-block", width: 16 }} />}
+            {label}
+          </td>
+          <td className={qClass(a.kvA)} style={{ fontWeight: lvl === 0 ? 700 : 600 }}>{a.kvA.toFixed(1)} %</td>
+          <td>{nf.format(a.jbl)}</td>
+          <td>{nf.format(a.pozde)}</td>
+          <td>{leaf ? DNI[dow(days[0].datum)] : `${a.n} d`}</td>
+        </tr>
+        {isOpen && !leaf && childRows(k, days, lvl + 1)}
+      </>
+    );
+  };
+
+  const childRows = (parentKey, days, lvl) => {
+    if (lvl === 1) return group(days, stvrtrok).map(([q, d]) =>
+      <Radek key={parentKey + q} k={parentKey + "|" + q} label={q} days={d} lvl={lvl} />);
+    if (lvl === 2) return group(days, mesiac).map(([m, d]) =>
+      <Radek key={parentKey + m} k={parentKey + "|" + m} label={m} days={d} lvl={lvl} />);
+    if (lvl === 3) return group(days, monday).map(([w, d]) =>
+      <Radek key={parentKey + w} k={parentKey + "|" + w} label={`týždeň od ${fmtD(w)}`} days={d} lvl={lvl} />);
+    return [...days].sort((a, b) => (a.datum < b.datum ? -1 : 1)).map((r) =>
+      <Radek key={parentKey + r.datum} k={parentKey + r.datum} label={fmtD(r.datum) + r.datum.slice(0, 4)} days={[r]} lvl={lvl} leaf />);
+  };
+
+  const lastDay = [...new Set(rows.map((r) => r.datum))].sort().pop();
 
   return (
     <>
-      <p className="note">Kvalita = podiel jobline dokončených v limite, po prevádzkových dňoch 06:00–06:00. Všetky agregáty sú <b>priemerom denných kvalít</b> (každý deň má rovnakú váhu), nie podielom z celkového objemu.</p>
-      <div className="grid g4">
-        {procesy.map((p) => {
-          const d = byProc(p);
-          const last = d.find((r) => r.datum === lastDay);
-          const v = last ? kv(last) : null;
-          const m7 = avg(d.slice(-8, -1).map(kv));
-          return (
-            <div key={p} className="card" onClick={() => setProces(p)} style={{ cursor: "pointer", outline: p === proces ? "1px solid var(--green)" : "none" }}>
-              <div className="lbl">{p}</div>
-              <div className={`val ${v != null ? qClass(v) : ""}`}>{v != null ? v.toFixed(1) + " %" : "–"}</div>
-              <div className="sub">{fmtD(lastDay)} · priemer 7 dní {m7.toFixed(1)} % {v != null ? (v >= m7 ? "▲" : "▼") : ""} · {last ? nf.format(+last.celkem) : 0} JBL</div>
-            </div>
-          );
-        })}
-      </div>
+      <p className="note">Kvalita = podiel jobline dokončených v limite, prevádzkové dni 06:00–06:00. Agregáty sú <b>priemerom denných kvalít</b> (každý deň rovnaká váha). Klikaním rozbaľuješ proces → štvrťrok → mesiac → týždeň → deň.</p>
+      <table className="t">
+        <thead><tr><th>Obdobie</th><th>Kvalita (Ø denných)</th><th>Jobline</th><th>Po limite</th><th>Dní</th></tr></thead>
+        <tbody>
+          {procesy.map((p) => {
+            const days = rows.filter((r) => r.proces === p);
+            const last = days.find((r) => r.datum === lastDay);
+            return <Radek key={p} k={p} days={days} lvl={0}
+              label={<>{p} {last && <span className={`pill ${kv(last) >= 97 ? "green" : kv(last) >= 92 ? "amber" : "red"}`} style={{ marginLeft: 8 }}>{fmtD(lastDay)}: {kv(last).toFixed(1)} %</span>}</>} />;
+          })}
+        </tbody>
+      </table>
 
-      <div className="section">
-        <div className="frm" style={{ marginBottom: 8 }}>
-          <div className="seg">
-            {[[30, "30 dní"], [90, "90 dní"], [3650, "všetko"]].map(([n, l]) =>
-              <button key={n} className={range === n ? "on" : ""} onClick={() => setRange(n)}>{l}</button>)}
-          </div>
-          <div className="fld"><label>Proces</label>
-            <select value={proces} onChange={(e) => setProces(e.target.value)}>{procesy.map((p) => <option key={p}>{p}</option>)}</select></div>
-        </div>
-        <h3>Kvalita · {proces} <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 13 }}>· priemer denných kvalít v období: {avg(sel.map(kv)).toFixed(1)} %</span></h3>
-        <div className="chartbox">
-          <Lines height={230} xLabels={sel.map((r) => fmtD(r.datum))} series={[
-            { color: "var(--green)", points: sel.map(kv) },
-          ]} />
-        </div>
-      </div>
-
-      {hod && hod.profil[proces] && (
+      {hod && (
         <div className="section">
-          <h3>Kvalita podľa hodiny dňa · posledných {hod.dni} dní</h3>
-          <div className="chartbox">
-            <Bars color="var(--amber)" height={200} data={OP_HOURS.map((h) => ({ x: String(h).padStart(2, "0"), y: hod.profil[proces][h] ?? 0 }))} />
+          <div className="frm" style={{ marginBottom: 8 }}>
+            <div className="fld"><label>Proces</label>
+              <select value={selProc || procesy[0]} onChange={(e) => setSelProc(e.target.value)}>{procesy.map((p) => <option key={p}>{p}</option>)}</select></div>
           </div>
-          <p className="note">Nízke stĺpce ukazujú hodiny, kde sa koncentrujú oneskorené dokončenia.</p>
+          <h3>Kvalita podľa hodiny dňa · posledných {hod.dni} dní · priemer denných hodinových kvalít</h3>
+          <div className="chartbox">
+            <Bars color="var(--amber)" height={200} data={OP_HOURS.map((h) => ({ x: String(h).padStart(2, "0"), y: (hod.profil[selProc || procesy[0]] || [])[h] ?? 0 }))} />
+          </div>
+          <p className="note">Nízke stĺpce = hodiny, kde sa koncentrujú oneskorené dokončenia.</p>
         </div>
       )}
-
-      <div className="section">
-        <h3>Najslabšie dni · {proces} (v zobrazenom období)</h3>
-        <table className="t"><thead><tr><th>Deň</th><th>Kvalita</th><th>Jobline</th><th>Po limite</th></tr></thead>
-          <tbody>{worst.map((r) => (
-            <tr key={r.datum}><td>{fmtD(r.datum)}{r.datum.slice(0, 4)} {DNI[dow(r.datum)]}</td>
-              <td className={qClass(kv(r))}>{kv(r).toFixed(1)} %</td>
-              <td>{nf.format(+r.celkem)}</td><td>{nf.format(+r.pozde)}</td></tr>
-          ))}</tbody></table>
-      </div>
     </>
   );
 }
