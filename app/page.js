@@ -100,6 +100,7 @@ const ICO = {
   prepocet: "M20 11a8 8 0 0 0-13.7-5.3L3 9M3 4v5h5m-4 4a8 8 0 0 0 13.7 5.3L21 15m0 5v-5h-5",
   vstup: "M12 5v14M5 12h14",
   anom: "M12 4 2.5 20h19L12 4Zm0 6v5m0 3h.01",
+  lock: "M7 10V7a5 5 0 0 1 10 0v3M6 10h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Zm6 5v2",
   import: "M12 15V3m0 12-4-4m4 4 4-4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4",
   save: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2ZM8 3v6h7M8 21v-6h8v6",
   trash: "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7m4 4v7m4-7v7",
@@ -132,6 +133,8 @@ export default function Page() {
   const [backlogy, setBacklogy] = useState([]);
   const [ghOk, setGhOk] = useState(null);
   const [loadErr, setLoadErr] = useState(null);
+  const [heslo, setHeslo] = useState(null);       // odomknuté heslo pre chránené zápisy
+  const [chranene, setChranene] = useState(false); // je ochrana vôbec zapnutá?
 
   useEffect(() => {
     (async () => {
@@ -189,6 +192,8 @@ export default function Page() {
       loadMut("priebeh.csv", setPriebeh);
       loadMut("kpi.csv", setKpi);
       loadMut("backlog.csv", setBacklogy);
+      fetch("/api/heslo").then((r) => r.json()).then((j) => setChranene(Boolean(j.chranene))).catch(() => {});
+      try { const h = sessionStorage.getItem("vykony-heslo"); if (h) setHeslo(h); } catch {}
       } catch (e) { setLoadErr(String(e.message || e)); }
     })();
   }, []);
@@ -199,7 +204,8 @@ export default function Page() {
     setter(rows);
     try {
       const r = await fetch("/api/gh", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(heslo ? { "x-vykony-heslo": heslo } : {}) },
         body: JSON.stringify({ file, content: toCSV(rows, columns), message }),
       });
       if (r.ok) show(`Uložené a commitnuté: ${file}`);
@@ -209,7 +215,8 @@ export default function Page() {
 
   const saveRaw = async (file, content, message) => {
     const r = await fetch("/api/gh", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(heslo ? { "x-vykony-heslo": heslo } : {}) },
       body: JSON.stringify({ file, content, message }),
     });
     if (!r.ok) throw new Error((await r.json()).error || `Zápis ${file} zlyhal.`);
@@ -314,8 +321,8 @@ export default function Page() {
       {tab === "anom" && <TabAnomalie D={D} uda={uda} src={src} vynimky={vynimky} setVynimky={setVynimky} save={save} kpi={kpi} pomery={staticData.pomery} backlogy={backlogy} setBacklogy={setBacklogy} />}
       {tab === "udal" && <TabUdalosti D={V} uda={uda} setUdalosti={setUdalosti} save={save} />}
       {tab === "kvalita" && <TabKvalita staticData={staticData} />}
-      {tab === "kpi" && <TabKPI TP={TP} uda={uda} pomery={staticData.pomery} kpi={kpi} setKpi={setKpi} save={save} backlogy={backlogy} />}
-      {tab === "vykony" && <TabVykony kpi={kpi} setKpi={setKpi} save={save} />}
+      {tab === "kpi" && <TabKPI TP={TP} uda={uda} pomery={staticData.pomery} kpi={kpi} setKpi={setKpi} save={save} backlogy={backlogy} odomknute={!chranene || Boolean(heslo)} />}
+      {tab === "vykony" && <TabVykony kpi={kpi} setKpi={setKpi} save={save} chranene={chranene} heslo={heslo} setHeslo={setHeslo} show={show} />}
       {tab === "import" && <TabImport saveRaw={saveRaw} show={show} ghOk={ghOk} />}
       {tab === "model" && <TabModel sources={{ vzniky: { ...V, vynD: vynimky.map((v) => v.datum) }, triedenie: TP.triedenie, prijem: TP.prijem, distribucia: TP.distribucia }} vynD={vynimky.map((v) => v.datum)} uda={uda} />}
 
@@ -1058,7 +1065,7 @@ function TabKvalita({ staticData }) {
 }
 
 // ------------------------------------------------------------ ⚙️ Výkony
-function TabVykony({ kpi, setKpi, save }) {
+function TabVykony({ kpi, setKpi, save, chranene, heslo, setHeslo, show }) {
   const PROCESY = ["Príjem", "Pick", "Pack", "Sort"];
   const COLS = ["proces", "vykon", "datum"];
   const [glob, setGlob] = useState(null);
@@ -1076,10 +1083,59 @@ function TabVykony({ kpi, setKpi, save }) {
     save("kpi.csv", rows, COLS, "data: plošné výkony procesov", setKpi);
   };
   const denne = kpi.filter((k) => k.datum && +k.vykon > 0).sort((a, b) => (a.datum < b.datum ? 1 : -1));
+  const odomknute = !chranene || Boolean(heslo);
+  const [pokus, setPokus] = useState("");
+  const [overujem, setOverujem] = useState(false);
+  const odomkni = async () => {
+    setOverujem(true);
+    try {
+      const r = await fetch("/api/heslo", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ heslo: pokus }),
+      });
+      if (r.ok) {
+        setHeslo(pokus);
+        try { sessionStorage.setItem("vykony-heslo", pokus); } catch {}
+        setPokus("");
+        show("Odomknuté – zmeny výkonov sú povolené.");
+      } else show((await r.json()).error || "Nesprávne heslo.", true);
+    } catch { show("Overenie zlyhalo.", true); }
+    setOverujem(false);
+  };
+  const zamkni = () => {
+    setHeslo(null);
+    try { sessionStorage.removeItem("vykony-heslo"); } catch {}
+    show("Zamknuté.");
+  };
   const inp = { width: 110, background: "var(--field)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 9px", fontFamily: "var(--mono)" };
 
   return (
     <>
+      {chranene && (
+        <div className="card" style={{ marginBottom: 14, borderColor: odomknute ? "var(--border)" : "var(--amber)" }}>
+          {odomknute ? (
+            <div className="frm" style={{ alignItems: "center" }}>
+              <span className="pill green"><Ico n="lock" /> odomknuté</span>
+              <span className="note" style={{ margin: 0 }}>Zmeny výkonov sú povolené v tejto relácii.</span>
+              <button className="btn ghost" onClick={zamkni}><Ico n="lock" />Zamknúť</button>
+            </div>
+          ) : (
+            <>
+              <div className="lbl" style={{ display: "flex", alignItems: "center", gap: 6 }}><Ico n="lock" /> Chránené nastavenie</div>
+              <p className="note">Plošné výkony môžu meniť len poverení ľudia. Zadaj heslo – platí do zatvorenia karty prehliadača.</p>
+              <div className="frm">
+                <div className="fld"><label>Heslo</label>
+                  <input type="password" value={pokus} autoComplete="off"
+                    onChange={(e) => setPokus(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && pokus) odomkni(); }} /></div>
+                <button className="btn" disabled={!pokus || overujem} onClick={odomkni}>
+                  <Ico n="lock" />{overujem ? "Overujem…" : "Odomknúť"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
       <p className="note">Plošné výkony (JBL na osobu a hodinu) platia pre <b>všetky dni</b> – používa ich Predikcia (hodiny na spracovanie), KPI aj backlog. Úpravy pre konkrétne dni sa spravujú v záložke KPI a majú pred plošnými prednosť.</p>
       <table className="t" style={{ maxWidth: 560 }}>
         <thead><tr><th>Proces</th><th>Aktuálne uložené</th><th>Nová hodnota</th></tr></thead>
@@ -1088,14 +1144,15 @@ function TabVykony({ kpi, setKpi, save }) {
             <tr key={p}>
               <td style={{ fontFamily: "var(--sans)", fontWeight: 600 }}>{p}</td>
               <td className={ulozene(p) ? "accent" : ""} style={{ fontWeight: 650 }}>{ulozene(p) ?? <span className="pill red">nenastavené</span>}</td>
-              <td><input type="number" min="0" placeholder="zadaj" style={inp} value={globVal[p]}
+              <td><input type="number" min="0" placeholder={odomknute ? "zadaj" : "zamknuté"} style={{ ...inp, opacity: odomknute ? 1 : 0.5 }}
+                disabled={!odomknute} value={globVal[p]}
                 onChange={(e) => setGlob({ ...globVal, [p]: e.target.value })} /></td>
             </tr>
           ))}
         </tbody>
       </table>
       <div className="frm" style={{ marginTop: 10 }}>
-        <button className="btn" disabled={!zmenene} onClick={uloz}><Ico n="save" />Uložiť plošné výkony</button>
+        <button className="btn" disabled={!zmenene || !odomknute} onClick={uloz}><Ico n="save" />Uložiť plošné výkony</button>
         {zmenene && <span className="note" style={{ alignSelf: "center" }}>neuložené zmeny</span>}
       </div>
 
@@ -1117,7 +1174,7 @@ function TabVykony({ kpi, setKpi, save }) {
 }
 
 // ------------------------------------------------------------ 🧮 KPI
-function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy }) {
+function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy, odomknute = true }) {
   const PROCESY = ["Príjem", "Pick", "Pack", "Sort"];
   const [datum, setDatum] = useState(today());
   const [denne, setDenne] = useState(null); // denné overridy {proces: str}
@@ -1173,7 +1230,8 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy }) {
       <div className="frm" style={{ marginBottom: 12 }}>
         <div className="fld"><label>Prevádzkový deň</label>
           <input type="date" value={datum} onChange={(e) => { setDatum(e.target.value); setDenne(null); setOverride({}); }} /></div>
-        <button className="btn" onClick={ulozDen}><Ico n="save" />Uložiť úpravu dňa {fmtD(datum)}</button>
+        <button className="btn" disabled={!odomknute} onClick={ulozDen}><Ico n="save" />Uložiť úpravu dňa {fmtD(datum)}</button>
+        {!odomknute && <span className="note" style={{ alignSelf: "center" }}>Zmena výkonov je chránená – odomkni v záložke Výkony.</span>}
       </div>
 
       {blNaDen.length > 0 && (
