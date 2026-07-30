@@ -101,6 +101,7 @@ const ICO = {
   prepocet: "M20 11a8 8 0 0 0-13.7-5.3L3 9M3 4v5h5m-4 4a8 8 0 0 0 13.7 5.3L21 15m0 5v-5h-5",
   vstup: "M12 5v14M5 12h14",
   anom: "M12 4 2.5 20h19L12 4Zm0 6v5m0 3h.01",
+  jazyk: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm-9-9h18M12 3c2.5 2.4 3.8 5.4 3.8 9s-1.3 6.6-3.8 9c-2.5-2.4-3.8-5.4-3.8-9s1.3-6.6 3.8-9Z",
   lock: "M7 10V7a5 5 0 0 1 10 0v3M6 10h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Zm6 5v2",
   import: "M12 15V3m0 12-4-4m4 4 4-4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4",
   save: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2ZM8 3v6h7M8 21v-6h8v6",
@@ -212,8 +213,8 @@ export default function Page() {
         body: JSON.stringify({ file, content: toCSV(rows, columns), message }),
       });
       if (r.ok) show(`Uložené a commitnuté: ${file}`);
-      else show((await r.json()).error || "Uložené len lokálne.", true);
-    } catch { show("Uložené len lokálne (bez pripojenia).", true); }
+      else show((await r.json()).error || t("Uložené len lokálne."), true);
+    } catch { show(t("Uložené len lokálne (bez pripojenia)."), true); }
   };
 
   const saveRaw = async (file, content, message) => {
@@ -268,7 +269,7 @@ export default function Page() {
       <div className="note">Skontroluj, či je súbor v repe v `public/data/` a či prebehol Redeploy.</div>
     </div></div>
   );
-  if (!D || !V || !TP) return <div className="shell"><div className="note">Načítavam dáta…</div></div>;
+  if (!D || !V || !TP) return <div className="shell"><div className="note">{t("Načítavam dáta…")}</div></div>;
   const { model, prof } = D;
   const uda = udalosti;
 
@@ -283,35 +284,36 @@ export default function Page() {
   return (
     <div className="shell">
       <div className="masthead">
-        <div className="eyebrow" style={{ justifyContent: "space-between" }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span className="livedot" /> SKLC3 · LOGISTIKA</span>
-          <span className="langsw">
-            {JAZYKY.map(([k, l]) => (
-              <button key={k} className={jazyk === k ? "on" : ""} title={k}
-                onClick={() => { setJazyk(k); try { localStorage.setItem("jazyk", k); } catch {} }}>{l}</button>
-            ))}
-          </span>
-        </div>
+        <div className="eyebrow"><span className="livedot" /> SKLC3 · LOGISTIKA</div>
         <h1>PREDIKCIA SKLC3</h1>
         <div className="statusline">
           <span>{t("Deň")} <b>06:00–06:00</b></span>
           {naZdroji && (
             <>
-              <span>zdroj <b>{{ vzniky: "vzniky (zákaznícke)", triedenie: "triedenie (expedícia)", prijem: "príjem (received)", distribucia: "distribúcia (medzisklad)" }[src]}</b></span>
-              <span>tréning <b>{model.trainDays} dní</b></span>
-              <span>posledné dáta <b>{fmtD(model.lastDate)}{model.lastDate.slice(0, 4)}</b></span>
-              <span>úroveň <b>{nf.format(model.levelNow)}</b> JBL/deň</span>
+              <span>{t("zdroj")}{" "}<b>{{ vzniky: "vzniky (zákaznícke)", triedenie: "triedenie (expedícia)", prijem: "príjem (received)", distribucia: "distribúcia (medzisklad)" }[src]}</b></span>
+              <span>{t("tréning")}{" "}<b>{model.trainDays} dní</b></span>
+              <span>{t("posledné dáta")}{" "}<b>{fmtD(model.lastDate)}{model.lastDate.slice(0, 4)}</b></span>
+              <span>{t("úroveň")}{" "}<b>{nf.format(model.levelNow)}</b> JBL/deň</span>
               <span className={trendPct}>trend {model.slope >= 0 ? "▲" : "▼"} {nf.format(Math.abs(model.slope))}/deň</span>
               {Math.abs((model.corr ?? 1) - 1) >= 0.02 && <span className="warn">korekcia ×{model.corr.toFixed(2)}</span>}
             </>
           )}
         </div>
+        <div className="navrow">
         <div className="srcswitch" role="tablist" aria-label="Sekcia">
           {[["vzniky", "Vzniky"], ["triedenie", "Triedenie"], ["prijem", "Príjem"], ["distribucia", "Distribúcia"]].map(([k, l]) =>
             <button key={k} className={naZdroji && src === k ? "on" : ""} onClick={() => prepniZdroj(k)}><Ico n={k} />{t(l)}</button>)}
           <span style={{ alignSelf: "center", color: "var(--border)", padding: "0 2px", userSelect: "none" }}>│</span>
           {[["kvalita", "Kvalita"], ["udal", "Udalosti"], ["kpi", "KPI"], ["vykony", "Výkony"], ["model", "Model"], ["import", "Dáta"]].map(([k, l]) =>
             <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}><Ico n={k} />{t(l)}</button>)}
+        </div>
+        <div className="langsw" role="group" aria-label="Jazyk / Language">
+          <Ico n="jazyk" />
+          {JAZYKY.map(([k, l]) => (
+            <button key={k} className={jazyk === k ? "on" : ""}
+              onClick={() => { setJazyk(k); try { localStorage.setItem("jazyk", k); } catch {} }}>{l}</button>
+          ))}
+        </div>
         </div>
         {naZdroji && src === "distribucia" && <div className="note" style={{ marginTop: 8 }}>Distribúcia = preposielanie medzi skladmi (vrátane nočného batchu ~3:00). Objem riadi doplňovanie, nie zákaznícky dopyt – predikciu ber orientačnejšie než pri zákazníckych vznikoch.</div>}
         {naZdroji && src === "prijem" && <div className="note" style={{ marginTop: 8 }}>Príjem je riadený harmonogramom dodávok, nie zákazníckym dopytom – predikcia je orientačná (typická odchýlka ±20–40 %). Presnejší odhad by dali avíza dodávok.</div>}
@@ -410,39 +412,39 @@ function TabPredikcia({ D, uda, src, kpi, pomery, backlogy }) {
       </div>
       <div className="grid g4">
         {jePast && skut != null ? (
-          <Card lbl={`Skutočnosť · ${fmtD(datum)} (${DNI[dow(datum)]})`} val={nf.format(skut)} cls="accent"
-            sub={`model očakával ${nf.format(pred)} · odchýlka ${((skut / pred - 1) * 100).toFixed(1)} %`} />
+          <Card lbl={`${t("Skutočnosť")} · ${fmtD(datum)} (${DNI[dow(datum)]})`} val={nf.format(skut)} cls="accent"
+            sub={`${t("model očakával")} ${nf.format(pred)} · ${t("odchýlka")} ${((skut / pred - 1) * 100).toFixed(1)} %`} />
         ) : (
-          <Card lbl={`${jePast ? "Očakávané (spätne)" : "Predikcia"} na ${fmtD(datum)} (${DNI[dow(datum)]})`} val={nf.format(pred)} cls="accent"
+          <Card lbl={`${jePast ? t("Očakávané (spätne)") : t("Predikcia")} ${t("na")} ${fmtD(datum)} (${DNI[dow(datum)]})`} val={nf.format(pred)} cls="accent"
             sub={jePast ? "skutočnosť pre tento deň nie je v dátach – doplň ju v Zadávaní dát"
-              : `80 % interval: ${nf.format(pred * (1 - 1.28 * s))} – ${nf.format(pred * (1 + 1.28 * s))} · zohľadňuje skutočnosť posledných dní (korekcia ×${(model.corr ?? 1).toFixed(2)})`} />
+              : `${t("80 % interval")}: ${nf.format(pred * (1 - 1.28 * s))} – ${nf.format(pred * (1 + 1.28 * s))} · ${t("zohľadňuje skutočnosť posledných dní (korekcia)")} ×${(model.corr ?? 1).toFixed(2)}`} />
         )}
-        <Card lbl={t("Faktor dňa v týždni")} val={model.dowF[dow(datum)].toFixed(2)} sub={`deň v mesiaci: ${model.domF[new Date(datum).getUTCDate()].toFixed(2)}`} />
+        <Card lbl={t("Faktor dňa v týždni")} val={model.dowF[dow(datum)].toFixed(2)} sub={`${t("deň v mesiaci")}: ${model.domF[new Date(datum).getUTCDate()].toFixed(2)}`} />
         <Card lbl={t("Udalosti")} val={`×${ev.toFixed(2)}`} cls={ev === 1 ? "" : "warn"} sub={ev === 1 ? "žiadna aktívna udalosť" : "aktívna udalosť upravuje predikciu"} />
-        <Card lbl={t("Denná úroveň modelu")} val={nf.format(model.levelNow)} sub={`trend ${model.slope >= 0 ? "+" : ""}${nf.format(model.slope)}/deň, tlmený`} />
+        <Card lbl={t("Denná úroveň modelu")} val={nf.format(model.levelNow)} sub={`${t("trend")} ${model.slope >= 0 ? "+" : ""}${nf.format(model.slope)}${t("/deň, tlmený")}`} />
       </div>
 
       <div className="section">
-        <h3>Hodinová predikcia · {fmtD(datum)}</h3>
+        <h3>{t("Hodinová predikcia")} · {fmtD(datum)}</h3>
         <div className="chartbox"><Bars data={OP_HOURS.map((h) => ({ x: String(h).padStart(2, "0"), y: pred * p[h] }))} /></div>
         <p className="note">Prevádzkový deň {String(OP_START).padStart(2, "0")}:00 – {String(OP_START).padStart(2, "0")}:00 nasledujúceho dňa.</p>
       </div>
 
       <div className="section">
-        <h3>Denná predikcia · najbližších {horizon} dní</h3>
+        <h3>{t("Denná predikcia · najbližších")} {horizon} dní</h3>
         <div className="chartbox">
           <Bars data={Array.from({ length: horizon }, (_, i) => {
             const d = addDays(today(), i);
             return { x: fmtD(d), y: predictDay(d, model, uda), hl: eventMult(d, uda) !== 1 };
           })} />
-          <div className="legend"><span><i style={{ background: "var(--green)" }} />bežný deň</span><span><i style={{ background: "var(--amber)" }} />deň s udalosťou</span></div>
+          <div className="legend"><span><i style={{ background: "var(--green)" }} />{t("bežný deň")}</span><span><i style={{ background: "var(--amber)" }} />{t("deň s udalosťou")}</span></div>
         </div>
       </div>
 
       <div className="section">
         <h3>{t("Skutočnosť vs. model · posledných 60 dní")}</h3>
         <div className="chartbox">
-          <div className="legend"><span><i style={{ background: "var(--green)" }} />skutočnosť</span><span><i style={{ background: "var(--muted)" }} />model</span></div>
+          <div className="legend"><span><i style={{ background: "var(--green)" }} />{t("skutočnosť")}</span><span><i style={{ background: "var(--muted)" }} />{t("model")}</span></div>
           <Lines xLabels={hist.map((r) => fmtD(r.datum))} series={[
             { color: "var(--green)", points: hist.map((r) => r.jbl) },
             { color: "var(--muted)", points: hist.map((r) => expectedFor(r.datum, model, uda)) },
@@ -471,19 +473,19 @@ function TabZvoz({ V, TP, staticData, uda, backlogy }) {
         <div className="fld"><label>{t("Deň zvozu")}</label><input type="date" value={datum} onChange={(e) => setDatum(e.target.value)} /></div>
       </div>
       <div className="grid g4">
-        <Card lbl={`Predikcia zvozov · ${fmtD(datum)} (${DNI[dow(datum)]})`} val={nf.format(z.total + blDen)} cls="blue"
-          sub={blDen > 0 ? `vrátane +${nf.format(blDen)} preneseného backlogu` : "jobline na expedíciu"} />
-        <Card lbl={`Distribúcia (medzisklad) · ${fmtD(datum)}`} val={nf.format(distVol)}
-          sub={`${distActual.has(datum) ? "skutočnosť" : "predikcia"} · práca mimo zákazníckych zvozov`} />
+        <Card lbl={`${t("Predikcia zvozov")} · ${fmtD(datum)} (${DNI[dow(datum)]})`} val={nf.format(z.total + blDen)} cls="blue"
+          sub={blDen > 0 ? `${t("vrátane")} +${nf.format(blDen)} ${t("preneseného backlogu")}` : "jobline na expedíciu"} />
+        <Card lbl={`${t("Distribúcia (medzisklad)")} · ${fmtD(datum)}`} val={nf.format(distVol)}
+          sub={`${distActual.has(datum) ? t("skutočnosť") : t("predikcia")} · ${t("práca mimo zákazníckych zvozov")}`} />
         {[0, 1].map((k) => (
-          <Card key={k} lbl={`Z vznikov ${k === 0 ? "v deň zvozu" : fmtD(days[k])} (D${-k})`}
+          <Card key={k} lbl={`${t("Z vznikov")} ${k === 0 ? t("v deň zvozu") : fmtD(days[k])} (D${-k})`}
             val={nf.format(z.contrib[k])}
             sub={`${nf1.format((z.contrib[k] / z.total) * 100)} % objemu · vzniky: ${nf.format(vznikyOf(days[k]))}${actual.has(days[k]) ? " (skutočnosť)" : " (model)"}`} />
         ))}
       </div>
 
       <div className="section">
-        <h3>Hodinový profil zvozov · {fmtD(datum)}</h3>
+        <h3>{t("Hodinový profil zvozov")} · {fmtD(datum)}</h3>
         <div className="chartbox">
           <Bars color="var(--blue)" data={OP_HOURS.map((h) => ({ x: String(h).padStart(2, "0"), y: z.total * staticData.zvozProfil[h] }))} />
         </div>
@@ -499,7 +501,7 @@ function TabZvoz({ V, TP, staticData, uda, backlogy }) {
               .reduce((a, b) => a + +b.objem * ((b.zdroj || "triedenie") === "vzniky" ? 0.884 : 1), 0);
             return { x: `${fmtD(d)} ${DNI[dow(d)]}`, y: predictZvoz(d, staticData.matica, V.prof, vznikyOf).total + b7, hl: b7 > 0 };
           })} />
-          <div className="legend"><span><i style={{ background: "var(--blue)" }} />predikcia</span><span><i style={{ background: "var(--amber)" }} />deň s preneseným backlogom</span></div>
+          <div className="legend"><span><i style={{ background: "var(--blue)" }} />{t("predikcia")}</span><span><i style={{ background: "var(--amber)" }} />{t("deň s preneseným backlogom")}</span></div>
         </div>
         <p className="note">{t("Približne 88 % vzniknutých jobline reálne prejde zvozom (zvyšok sú interné/systémové joby bez expedície) – z toho ~26 % odíde v deň vzniku a ~65 % na druhý deň.")}</p>
       </div>
@@ -551,9 +553,9 @@ function TabPrepocet({ D, uda, src, priebeh, save, setPriebeh }) {
       {r.eod ? (
         <>
           <div className="grid g4">
-            <Card lbl={`Vzniknuté do ${String(H).padStart(2, "0")}:00`} val={nf.format(vznik)} sub={`porovnávacie dni do tejto hodiny: ${(r.shareMed * 100).toFixed(0)} % dňa`} />
-            <Card lbl={t("Odhad konca dňa (extrapolácia)")} val={nf.format(r.eod)} cls="accent" sub={`rozpätie ${nf.format(r.eodLo)} – ${nf.format(r.eodHi)}`} />
-            <Card lbl={t("Ešte pribudne")} val={nf.format(Math.max(r.eod - vznik, 0))} cls="warn" sub={`modelová predikcia dňa: ${nf.format(modelPred)}`} />
+            <Card lbl={`${t("Vzniknuté do")} ${String(H).padStart(2, "0")}:00`} val={nf.format(vznik)} sub={`${t("porovnávacie dni do tejto hodiny")}: ${(r.shareMed * 100).toFixed(0)} % ${t("dňa")}`} />
+            <Card lbl={t("Odhad konca dňa (extrapolácia)")} val={nf.format(r.eod)} cls="accent" sub={`${t("rozpätie")} ${nf.format(r.eodLo)} – ${nf.format(r.eodHi)}`} />
+            <Card lbl={t("Ešte pribudne")} val={nf.format(Math.max(r.eod - vznik, 0))} cls="warn" sub={`${t("modelová predikcia dňa")}: ${nf.format(modelPred)}`} />
             <Card lbl={t("Pick stav")} val={pick ? nf.format(pick) : "–"}
               sub={pick ? `backlog teraz: ${nf.format(Math.max(vznik - pick, 0))} · do konca dňa vypikovať: ${nf.format(Math.max(r.eod - pick, 0))}` : "nezadané"} />
           </div>
@@ -565,7 +567,7 @@ function TabPrepocet({ D, uda, src, priebeh, save, setPriebeh }) {
           <div className="section">
             <h3>{t("Projekcia kumulatívnej krivky dňa")}</h3>
             <div className="chartbox">
-              <div className="legend"><span><i style={{ background: "var(--muted)" }} />projekcia z porovnávacích dní</span><span><i style={{ background: "var(--green)" }} />dnešný zadaný stav</span></div>
+              <div className="legend"><span><i style={{ background: "var(--muted)" }} />{t("projekcia z porovnávacích dní")}</span><span><i style={{ background: "var(--green)" }} />{t("dnešný zadaný stav")}</span></div>
               <Lines xLabels={Array.from({ length: 24 }, (_, i) => String((OP_START + i + 1) % 24).padStart(2, "0"))} series={[
                 { color: "var(--muted)", points: cp.map((v) => v * r.eod) },
                 { color: "var(--green)", dots: true, points: Array.from({ length: 24 }, (_, i) => ((OP_START + i + 1) % 24 === H ? vznik : null)) },
@@ -660,7 +662,7 @@ function TabVstup({ src, zaznamy, setZaznamy, vynimky, setVynimky, save }) {
       </div>
       {poHodinach && (
         <>
-          {anom !== "Žiadna" && <p className="note" style={{ color: "var(--amber)" }}>Zaškrtni pri hodinách, ktoré boli ovplyvnené anomáliou „{anom}“ ({anomCnt} označených).</p>}
+          {anom !== "Žiadna" && <p className="note" style={{ color: "var(--amber)" }}>Zaškrtni pri hodinách, ktoré boli ovplyvnené anomáliou „{anom}“ ({anomCnt}{" "}{t("označených).")}</p>}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))", gap: 6, marginTop: 8 }}>
             {OP_HOURS.map((h, i) => (
               <div className="fld" key={h} style={anomHod[i] && anom !== "Žiadna" ? { outline: "1px solid var(--amber)", borderRadius: 8, padding: 4 } : { padding: 4 }}>
@@ -680,7 +682,7 @@ function TabVstup({ src, zaznamy, setZaznamy, vynimky, setVynimky, save }) {
       )}
 
       <div className="section">
-        <h3>Zadané záznamy · {src} ({new Set(zazSrc.map((z) => z.datum)).size} dní)</h3>
+        <h3>{t("Zadané záznamy")} · {src} ({new Set(zazSrc.map((z) => z.datum)).size}{" "}{t("dní)")}</h3>
         {zazSrc.length ? (
           <table className="t"><thead><tr><th>{t("Dátum")}</th><th>{t("Joblines")}</th><th>{t("Anomália")}</th><th /></tr></thead>
             <tbody>{[...new Set(zazSrc.map((z) => z.datum))].sort().reverse().map((d) => {
@@ -793,7 +795,7 @@ function TabAnomalie({ D, uda, src, vynimky, setVynimky, save, kpi, pomery, back
       <div className="frm" style={{ marginBottom: 10 }}>
         <div className="fld"><label>Prah odchýlky: ±{thr} %</label><input type="range" min="10" max="50" value={thr} onChange={(e) => setThr(+e.target.value)} /></div>
       </div>
-      <p className="note">Nájdených <b>{anom.length}</b> dní mimo ±{thr} % od modelu, z toho <span className="bad">{bez} bez priradenej výnimky</span>.
+      <p className="note">Nájdených <b>{anom.length}</b> dní mimo ±{thr} % od modelu, z toho <span className="bad">{bez}{" "}{t("bez priradenej výnimky")}</span>.
         Výnimka na celý deň sa z tréningu vylúči; výnimka obmedzená na hodiny deň opraví dopočtom a zvyšok dňa trénuje ďalej.</p>
       <table className="t"><thead><tr><th>{t("Dátum")}</th><th>{t("Skutočnosť")}</th><th>{t("Očakávané")}</th><th>{t("Odchýlka")}</th><th>{t("Výnimka")}</th></tr></thead>
         <tbody>{anom.slice(0, 40).map((r) => (
@@ -801,7 +803,7 @@ function TabAnomalie({ D, uda, src, vynimky, setVynimky, save, kpi, pomery, back
             <td>{fmtD(r.datum)}{r.datum.slice(0, 4)} {DNI[dow(r.datum)]}</td>
             <td>{nf.format(r.jbl)}</td><td>{nf.format(r.ocak)}</td>
             <td className={r.dev < 0 ? "bad" : "accent"}>{(r.dev * 100).toFixed(1)} %</td>
-            <td>{vmap.has(r.datum) ? <span className="pill gray">{vmap.get(r.datum).typ}{vmap.get(r.datum).hodiny ? ` · h ${vmap.get(r.datum).hodiny}` : ""}</span> : <span className="pill red">nepriradená</span>}</td>
+            <td>{vmap.has(r.datum) ? <span className="pill gray">{vmap.get(r.datum).typ}{vmap.get(r.datum).hodiny ? ` · h ${vmap.get(r.datum).hodiny}` : ""}</span> : <span className="pill red">{t("nepriradená")}</span>}</td>
           </tr>
         ))}</tbody></table>
 
@@ -814,7 +816,7 @@ function TabAnomalie({ D, uda, src, vynimky, setVynimky, save, kpi, pomery, back
           <div className="fld"><label>{t("Popis (voliteľné)")}</label><input value={popis} onChange={(e) => setPopis(e.target.value)} /></div>
           <button className="btn" onClick={uloz}><Ico n="save" />{t("Uložiť výnimku")}</button>
         </div>
-        <p className="note" style={{ marginTop: 8 }}>Postihnuté hodiny (voliteľné – nič neoznačené = celý deň):</p>
+        <p className="note" style={{ marginTop: 8 }}>{t("Postihnuté hodiny (voliteľné – nič neoznačené = celý deň):")}</p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
           {OP_HOURS.map((h) => (
             <button key={h} onClick={() => togHod(h)}
@@ -839,20 +841,20 @@ function TabAnomalie({ D, uda, src, vynimky, setVynimky, save, kpi, pomery, back
             <>
               <div className="grid g4">
                 <Card lbl={t("Backlog (nespracované JBL)")} val={nf.format(bl.backlog)} cls="warn"
-                  sub={bl.maHodinoveData ? `oproti čistému očakávaniu ${nf.format(bl.clean)}` : "bez hodinových dát – ráta sa plný výpadok hodín"} />
+                  sub={bl.maHodinoveData ? `${t("oproti čistému očakávaniu")} ${nf.format(bl.clean)}` : "bez hodinových dát – ráta sa plný výpadok hodín"} />
                 <Card lbl={t("Postihnuté hodiny")} val={bl.vyn.hodiny.length} sub={bl.vyn.hodiny.map((h) => String(h).padStart(2, "0")).join(", ")} />
                 <Card lbl={t("Človekohodiny na dobehnutie")} val={blSpolu > 0 ? nf1.format(blSpolu) + " h" : "–"} cls="accent"
-                  sub={blSpolu > 0 ? `≈ ${nf1.format(blSpolu / 11)} osôb-zmien navyše (11 h čistého času)` : "doplň výkony v záložke KPI"} />
-                <Card lbl={t("Dopad")} val="+1 deň" sub="objem stráca prioritu a čaká na nasledujúci zvoz – práca nezmizla, len sa posunula" />
+                  sub={blSpolu > 0 ? `≈ ${nf1.format(blSpolu / 11)} ${t("osôb-zmien navyše (11 h čistého času)")}` : "doplň výkony v záložke KPI"} />
+                <Card lbl={t("Dopad")} val="+1 deň" sub={t("objem stráca prioritu a čaká na nasledujúci zvoz – práca nezmizla, len sa posunula")} />
               </div>
               <table className="t" style={{ marginTop: 10 }}><thead><tr><th>{t("Proces")}</th><th>{t("Backlog objem")}</th><th>{t("Výkon (JBL/os/h)")}</th><th>{t("Hodiny navyše")}</th></tr></thead>
                 <tbody>{blHodiny.map((x) => (
                   <tr key={x.p}><td style={{ fontFamily: "var(--sans)" }}>{x.p}</td><td>{nf.format(x.objem)}</td>
-                    <td>{x.vykon || "–"}</td><td className="accent" style={{ fontWeight: 650 }}>{x.hod != null ? nf1.format(x.hod) + " h" : "chýba výkon"}</td></tr>
+                    <td>{x.vykon || t("chýba výkon")}</td><td className="accent" style={{ fontWeight: 650 }}>{x.hod != null ? nf1.format(x.hod) + " h" : "chýba výkon"}</td></tr>
                 ))}</tbody></table>
               {src === "vzniky" && <p className="note">{t("Backlog zahŕňa aj distribučné jobline (medzisklad, ~12 % objemu) – tá práca sa musí spraviť tak či tak; na zvozové sloty nižšie sa viaže expedičná časť, distribučná sa dobieha nasledujúci deň mimo zákazníckych zvozov.")}</p>}
 
-              <h3 style={{ marginTop: 16 }}>Presun na najbližšie zvozy</h3>
+              <h3 style={{ marginTop: 16 }}>{t("Presun na najbližšie zvozy")}</h3>
               <p className="note">{t("Nespracovaný objem stráca prioritu a čaká na ďalší zvoz svojej linky – zmeškaný slot ide na rovnakú hodinu nasledujúceho dňa (podľa dát 64 % objemu drží hodinu slotu). Rozpad podľa cieľových zvozov:")}</p>
               <table className="t"><thead><tr><th>{t("Cieľový deň")}</th><th>{t("Zvoz (slot)")}</th><th>{t("Objem")}</th></tr></thead>
                 <tbody>{blCiele.slice(0, 12).map((c, i) => (
@@ -861,7 +863,7 @@ function TabAnomalie({ D, uda, src, vynimky, setVynimky, save, kpi, pomery, back
                 ))}</tbody></table>
               <div className="frm" style={{ marginTop: 10 }}>
                 <button className="btn" disabled={uzPrenesene} onClick={prenesBacklog}><Ico n="export" />Preniesť backlog do plánu ({[...new Set(blCiele.map((c) => c.datum))].map((d) => fmtD(d)).join(", ")})</button>
-                {uzPrenesene && <span className="note" style={{ alignSelf: "center" }}>Už prenesené – zrušiť sa dá v zozname nižšie</span>}
+                {uzPrenesene && <span className="note" style={{ alignSelf: "center" }}>{t("Už prenesené – zrušiť sa dá v zozname nižšie")}</span>}
               </div>
               <p className="note">{t("Prenesený backlog sa pripočíta k objemom v záložkách KPI (človekohodiny) a Zvozy pre cieľové dni.")}</p>
             </>
@@ -871,7 +873,7 @@ function TabAnomalie({ D, uda, src, vynimky, setVynimky, save, kpi, pomery, back
 
       {backlogy.length > 0 && (
         <div className="section">
-          <h3>Prenesené backlogy ({backlogy.length})</h3>
+          <h3>{t("Prenesené backlogy (")} {backlogy.length})</h3>
           <table className="t"><thead><tr><th>{t("Z dňa")}</th><th>{t("Na deň")}</th><th>{t("Objem")}</th><th>{t("Zdroj")}</th><th>{t("Pôvod")}</th><th /></tr></thead>
             <tbody>{[...backlogy].sort((a, b) => (a.na_datum < b.na_datum ? 1 : -1)).map((b, i) => (
               <tr key={i}><td>{fmtD(b.z_datum)}</td><td className="warn">{fmtD(b.na_datum)}</td><td>{nf.format(+b.objem)}</td>
@@ -886,11 +888,11 @@ function TabAnomalie({ D, uda, src, vynimky, setVynimky, save, kpi, pomery, back
 
       {vynimky.length > 0 && (
         <div className="section">
-          <h3>Evidované výnimky ({vynimky.length})</h3>
+          <h3>{t("Evidované výnimky (")} {vynimky.length})</h3>
           <table className="t"><thead><tr><th>{t("Dátum")}</th><th>{t("Typ")}</th><th>{t("Hodiny")}</th><th>{t("Popis")}</th><th /></tr></thead>
             <tbody>{[...vynimky].sort((a, b) => (a.datum < b.datum ? 1 : -1)).map((v) => (
               <tr key={v.datum}><td>{fmtD(v.datum)}{v.datum.slice(0, 4)}</td><td>{v.typ}</td>
-                <td>{v.hodiny ? <span className="pill amber">{v.hodiny}</span> : <span className="pill gray">celý deň</span>}</td>
+                <td>{v.hodiny ? <span className="pill amber">{v.hodiny}</span> : <span className="pill gray">{t("celý deň")}</span>}</td>
                 <td style={{ fontFamily: "var(--sans)" }}>{v.popis}</td>
                 <td><button className="btn ghost" onClick={() => zmaz(v.datum)}><Ico n="trash" /></button></td></tr>
             ))}</tbody></table>
@@ -926,14 +928,14 @@ function TabUdalosti({ D, uda, setUdalosti, save }) {
     const ratios = rng.map((r) => r.jbl / (expectedFor(r.datum, D.model, uda) / eventMult(r.datum, uda)));
     ratios.sort((a, b) => a - b);
     const k = ratios[ratios.length >> 1];
-    setOdhad(`Navrhovaný koeficient: ${k.toFixed(2)} (medián pomeru skutočnosť/model za ${rng.length} dní)`);
+    setOdhad(`Navrhovaný koeficient: ${k.toFixed(2)} (medián pomeru skutočnosť/model za ${rng.length}{" "}{t("dní)")}`);
   };
 
   return (
     <>
       <p className="note">{t("Koeficient násobí predikciu v danom rozsahu (1.05 = +5 %). Historické udalosti sa zároveň odfiltrujú zo sezónnosti modelu. Koeficient sa predvyplní z historických dát podľa typu – môžeš ho upraviť.")}</p>
       <div className="frm">
-        <div className="fld"><label>{t("Názov")}</label><input placeholder="napr. Alza dni august" value={nazov} onChange={(e) => setNazov(e.target.value)} style={{ minWidth: 200 }} /></div>
+        <div className="fld"><label>{t("Názov")}</label><input placeholder={t("napr. Alza dni august")} value={nazov} onChange={(e) => setNazov(e.target.value)} style={{ minWidth: 200 }} /></div>
         <div className="fld"><label>{t("Typ")}</label><select value={typ} onChange={(e) => changeTyp(e.target.value)}>{TYPY_UDALOSTI.map((t) => <option key={t}>{t}</option>)}</select></div>
         <div className="fld"><label>{t("Od")}</label><input type="date" value={od} onChange={(e) => setOd(e.target.value)} /></div>
         <div className="fld"><label>{t("Do")}</label><input type="date" value={doD} onChange={(e) => setDoD(e.target.value)} /></div>
@@ -1030,7 +1032,7 @@ function TabKvalita({ staticData }) {
     if (lvl === 2) return group(days, mesiac).map(([m, d]) =>
       <Radek key={parentKey + m} k={parentKey + "|" + m} label={m} days={d} lvl={lvl} />);
     if (lvl === 3) return group(days, monday).map(([w, d]) =>
-      <Radek key={parentKey + w} k={parentKey + "|" + w} label={`týždeň od ${fmtD(w)}`} days={d} lvl={lvl} />);
+      <Radek key={parentKey + w} k={parentKey + "|" + w} label={`${t("týždeň od")} ${fmtD(w)}`} days={d} lvl={lvl} />);
     return [...days].sort((a, b) => (a.datum < b.datum ? -1 : 1)).map((r) =>
       <Radek key={parentKey + r.datum} k={parentKey + r.datum} label={fmtD(r.datum) + r.datum.slice(0, 4)} days={[r]} lvl={lvl} leaf />);
   };
@@ -1058,7 +1060,7 @@ function TabKvalita({ staticData }) {
             <div className="fld"><label>{t("Proces")}</label>
               <select value={selProc || procesy[0]} onChange={(e) => setSelProc(e.target.value)}>{procesy.map((p) => <option key={p}>{p}</option>)}</select></div>
           </div>
-          <h3>Kvalita podľa hodiny dňa · posledných {hod.dni} dní · priemer denných hodinových kvalít</h3>
+          <h3>{t("Kvalita podľa hodiny dňa · posledných")} {hod.dni} dní · priemer denných hodinových kvalít</h3>
           <div className="chartbox">
             <Bars color="var(--amber)" height={200} data={OP_HOURS.map((h) => ({ x: String(h).padStart(2, "0"), y: (hod.profil[selProc || procesy[0]] || [])[h] ?? 0 }))} />
           </div>
@@ -1102,15 +1104,15 @@ function TabVykony({ kpi, setKpi, save, chranene, heslo, setHeslo, show }) {
         setHeslo(pokus);
         try { sessionStorage.setItem("vykony-heslo", pokus); } catch {}
         setPokus("");
-        show("Odomknuté – zmeny výkonov sú povolené.");
+        show(t("Odomknuté – zmeny výkonov sú povolené."));
       } else show((await r.json()).error || "Nesprávne heslo.", true);
-    } catch { show("Overenie zlyhalo.", true); }
+    } catch { show(t("Overenie zlyhalo."), true); }
     setOverujem(false);
   };
   const zamkni = () => {
     setHeslo(null);
     try { sessionStorage.removeItem("vykony-heslo"); } catch {}
-    show("Zamknuté.");
+    show(t("Zamknuté."));
   };
   const inp = { width: 110, background: "var(--field)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 9px", fontFamily: "var(--mono)" };
 
@@ -1120,13 +1122,13 @@ function TabVykony({ kpi, setKpi, save, chranene, heslo, setHeslo, show }) {
         <div className="card" style={{ marginBottom: 14, borderColor: odomknute ? "var(--border)" : "var(--amber)" }}>
           {odomknute ? (
             <div className="frm" style={{ alignItems: "center" }}>
-              <span className="pill green"><Ico n="lock" /> odomknuté</span>
-              <span className="note" style={{ margin: 0 }}>Zmeny výkonov sú povolené v tejto relácii.</span>
+              <span className="pill green"><Ico n="lock" /> {t("odomknuté")}</span>
+              <span className="note" style={{ margin: 0 }}>{t("Zmeny výkonov sú povolené v tejto relácii.")}</span>
               <button className="btn ghost" onClick={zamkni}><Ico n="lock" />{t("Zamknúť")}</button>
             </div>
           ) : (
             <>
-              <div className="lbl" style={{ display: "flex", alignItems: "center", gap: 6 }}><Ico n="lock" /> Chránené nastavenie</div>
+              <div className="lbl" style={{ display: "flex", alignItems: "center", gap: 6 }}><Ico n="lock" /> {t("Chránené nastavenie")}</div>
               <p className="note">{t("Plošné výkony môžu meniť len poverení ľudia. Zadaj heslo – platí do zatvorenia karty prehliadača.")}</p>
               <div className="frm">
                 <div className="fld"><label>{t("Heslo")}</label>
@@ -1134,7 +1136,7 @@ function TabVykony({ kpi, setKpi, save, chranene, heslo, setHeslo, show }) {
                     onChange={(e) => setPokus(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && pokus) odomkni(); }} /></div>
                 <button className="btn" disabled={!pokus || overujem} onClick={odomkni}>
-                  <Ico n="lock" />{overujem ? "Overujem…" : "Odomknúť"}
+                  <Ico n="lock" />{overujem ? t("Overujem…") : t("Odomknúť")}
                 </button>
               </div>
             </>
@@ -1148,8 +1150,8 @@ function TabVykony({ kpi, setKpi, save, chranene, heslo, setHeslo, show }) {
           {PROCESY.map((p) => (
             <tr key={p}>
               <td style={{ fontFamily: "var(--sans)", fontWeight: 600 }}>{p}</td>
-              <td className={ulozene(p) ? "accent" : ""} style={{ fontWeight: 650 }}>{ulozene(p) ?? <span className="pill red">nenastavené</span>}</td>
-              <td><input type="number" min="0" placeholder={odomknute ? "zadaj" : "zamknuté"} style={{ ...inp, opacity: odomknute ? 1 : 0.5 }}
+              <td className={ulozene(p) ? "accent" : ""} style={{ fontWeight: 650 }}>{ulozene(p) ?? <span className="pill red">{t("nenastavené")}</span>}</td>
+              <td><input type="number" min="0" placeholder={odomknute ? t("zadaj") : t("zamknuté")} style={{ ...inp, opacity: odomknute ? 1 : 0.5 }}
                 disabled={!odomknute} value={globVal[p]}
                 onChange={(e) => setGlob({ ...globVal, [p]: e.target.value })} /></td>
             </tr>
@@ -1158,11 +1160,11 @@ function TabVykony({ kpi, setKpi, save, chranene, heslo, setHeslo, show }) {
       </table>
       <div className="frm" style={{ marginTop: 10 }}>
         <button className="btn" disabled={!zmenene || !odomknute} onClick={uloz}><Ico n="save" />{t("Uložiť plošné výkony")}</button>
-        {zmenene && <span className="note" style={{ alignSelf: "center" }}>neuložené zmeny</span>}
+        {zmenene && <span className="note" style={{ alignSelf: "center" }}>{t("neuložené zmeny")}</span>}
       </div>
 
       <div className="section">
-        <h3>Denné úpravy výkonov ({denne.length})</h3>
+        <h3>{t("Denné úpravy výkonov (")} {denne.length})</h3>
         {denne.length ? (
           <table className="t" style={{ maxWidth: 560 }}>
             <thead><tr><th>{t("Deň")}</th><th>{t("Proces")}</th><th>{t("Výkon")}</th></tr></thead>
@@ -1236,7 +1238,7 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy, odomknute = true
         <div className="fld"><label>{t("Prevádzkový deň")}</label>
           <input type="date" value={datum} onChange={(e) => { setDatum(e.target.value); setDenne(null); setOverride({}); }} /></div>
         <button className="btn" disabled={!odomknute} onClick={ulozDen}><Ico n="save" />Uložiť úpravu dňa {fmtD(datum)}</button>
-        {!odomknute && <span className="note" style={{ alignSelf: "center" }}>Zmena výkonov je chránená – odomkni v záložke Výkony.</span>}
+        {!odomknute && <span className="note" style={{ alignSelf: "center" }}>{t("Zmena výkonov je chránená – odomkni v záložke Výkony.")}</span>}
       </div>
 
       {blNaDen.length > 0 && (
@@ -1250,8 +1252,8 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy, odomknute = true
           {PROCESY.map((p) => (
             <tr key={p}>
               <td style={{ fontFamily: "var(--sans)" }}>{p}{p !== "Príjem" && pomery[p] && pomery[p] !== 1 ? ` (×${pomery[p].toFixed(2)})` : ""}</td>
-              <td className={+globVal[p] > 0 ? "accent" : ""} style={{ fontWeight: 650 }}>{+globVal[p] > 0 ? globVal[p] : <span className="pill gray">vo Výkonoch</span>}</td>
-              <td><input type="number" min="0" placeholder="–" style={{ ...inp, borderColor: denVal[p] !== "" ? "var(--amber)" : "var(--border)" }} value={denVal[p]}
+              <td className={+globVal[p] > 0 ? "accent" : ""} style={{ fontWeight: 650 }}>{+globVal[p] > 0 ? globVal[p] : <span className="pill gray">{t("vo Výkonoch")}</span>}</td>
+              <td><input type="number" min="0" placeholder={t("–")} style={{ ...inp, borderColor: denVal[p] !== "" ? "var(--amber)" : "var(--border)" }} value={denVal[p]}
                 onChange={(e) => setDenne({ ...denVal, [p]: e.target.value })} /></td>
               <td className={denVal[p] !== "" ? "warn" : ""} style={{ fontWeight: 650 }}>{vykEff(p) || "–"}</td>
               <td><input type="number" min="0" step="100" style={{ ...inp, width: 110 }}
@@ -1276,7 +1278,7 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy, odomknute = true
           <div className="fld"><label>{t("Proces pre hodinový plán")}</label>
             <select value={selProc} onChange={(e) => setSelProc(e.target.value)}>{PROCESY.map((p) => <option key={p}>{p}</option>)}</select></div>
         </div>
-        <h3>Potrební ľudia po hodinách · {selProc} · {fmtD(datum)}</h3>
+        <h3>{t("Potrební ľudia po hodinách")} · {selProc} · {fmtD(datum)}</h3>
         {selVyk ? (
           <div className="chartbox">
             <Bars color="var(--blue)" data={OP_HOURS.map((h) => ({ x: String(h).padStart(2, "0"), y: (objem(selProc) * p24[h]) / selVyk }))} />
@@ -1364,7 +1366,7 @@ function TabImport({ saveRaw, show, ghOk }) {
         <input id="xlsin" type="file" accept=".xlsx,.xls" multiple style={{ display: "none" }}
           onChange={(e) => spracuj([...e.target.files])} />
         <label htmlFor="xlsin" className="btn" style={{ cursor: "pointer" }}>
-          <Ico n="import" />{busy ? "Spracúvam…" : "Vybrať Excel súbory"}
+          <Ico n="import" />{busy ? t("Spracúvam…") : t("Vybrať Excel súbory")}
         </label>
         <p className="note" style={{ margin: "10px 0 0" }}>alebo súbory sem pretiahni · spracovanie beží v prehliadači, nič sa nikam neposiela</p>
       </div>
@@ -1377,7 +1379,7 @@ function TabImport({ saveRaw, show, ghOk }) {
             <tbody>{vysledky.map((v) => (
               <tr key={v.nazov}>
                 <td style={{ fontFamily: "var(--sans)" }}>{v.nazov}</td>
-                <td>{v.chyba ? <span className="pill red">chyba</span> : <span className="pill green">{v.typ}</span>}</td>
+                <td>{v.chyba ? <span className="pill red">{t("chyba")}</span> : <span className="pill green">{v.typ}</span>}</td>
                 <td style={{ fontFamily: "var(--sans)" }} className={v.chyba ? "bad" : ""}>{v.chyba || v.suhrn}</td>
                 <td style={{ fontFamily: "var(--sans)" }}>{v.subory ? Object.keys(v.subory).map((n) => (
                   <div key={n}>{n} <span className="note" style={{ margin: 0 }}>· {POPIS_SUBOROV[n] || ""}</span></div>
@@ -1439,19 +1441,19 @@ function TabModel({ sources, vynD, uda }) {
         Dni s výnimkou sú z tréningu vylúčené, historické udalosti odfiltrované.</p>
       <div className="grid g2">
         <div className="chartbox">
-          <h3 style={{ margin: "2px 0 6px", fontSize: 14 }}>Faktor dňa v týždni (8 týždňov)</h3>
+          <h3 style={{ margin: "2px 0 6px", fontSize: 14 }}>{t("Faktor dňa v týždni (8 týždňov)")}</h3>
           <Bars height={190} data={model.dowF.map((v, i) => ({ x: DNI[i], y: v }))} />
         </div>
         <div className="chartbox">
-          <h3 style={{ margin: "2px 0 6px", fontSize: 14 }}>Faktor dňa v mesiaci (výplatné výkyvy)</h3>
+          <h3 style={{ margin: "2px 0 6px", fontSize: 14 }}>{t("Faktor dňa v mesiaci (výplatné výkyvy)")}</h3>
           <Lines height={190} xLabels={Array.from({ length: 31 }, (_, i) => String(i + 1))} series={[
             { color: "var(--green)", points: Array.from({ length: 31 }, (_, i) => model.domF[i + 1]) },
           ]} />
         </div>
       </div>
       <div className="section chartbox">
-        <h3 style={{ margin: "2px 0 6px", fontSize: 14 }}>Hodinový profil (podiel dňa, 6 týždňov)</h3>
-        <div className="legend"><span><i style={{ background: "var(--green)" }} />pracovný deň</span><span><i style={{ background: "var(--muted)" }} />víkend</span></div>
+        <h3 style={{ margin: "2px 0 6px", fontSize: 14 }}>{t("Hodinový profil (podiel dňa, 6 týždňov)")}</h3>
+        <div className="legend"><span><i style={{ background: "var(--green)" }} />{t("pracovný deň")}</span><span><i style={{ background: "var(--muted)" }} />{t("víkend")}</span></div>
         <Lines height={200} xLabels={OP_HOURS.map((h) => String(h).padStart(2, "0"))} series={[
           { color: "var(--green)", points: OP_HOURS.map((h) => prof["false"][h] * 100) },
           { color: "var(--muted)", points: OP_HOURS.map((h) => prof["true"][h] * 100) },
@@ -1464,13 +1466,13 @@ function TabModel({ sources, vynD, uda }) {
         {bt && (
           <>
             <div className="grid g4">
-              <Card lbl={t("MAPE (priem. % chyba)")} val={(bt.mape * 100).toFixed(1) + " %"} cls={bt.mape <= 0.08 ? "accent" : bt.mape <= 0.12 ? "warn" : "bad"} sub={`${bt.n} testovaných dní`} />
-              <Card lbl={t("MAE (priem. abs. chyba)")} val={nf.format(bt.mae)} sub="jobline na deň" />
+              <Card lbl={t("MAPE (priem. % chyba)")} val={(bt.mape * 100).toFixed(1) + " %"} cls={bt.mape <= 0.08 ? "accent" : bt.mape <= 0.12 ? "warn" : "bad"} sub={`${bt.n} ${t("testovaných dní")}`} />
+              <Card lbl={t("MAE (priem. abs. chyba)")} val={nf.format(bt.mae)} sub={t("jobline na deň")} />
               <Card lbl={t("Dní s chybou do ±5 000")} val={`${bt.do5k}/${bt.n}`} />
               <Card lbl={t("Bias (systematický posun)")} val={(bt.bias >= 0 ? "+" : "") + nf.format(bt.bias)} cls={Math.abs(bt.bias) <= 2000 ? "" : "warn"} sub={bt.bias > 2000 ? "model podstreľuje – over promo/udalosti" : bt.bias < -2000 ? "model prestreľuje – over výnimky" : "v norme"} />
             </div>
             <div className="chartbox" style={{ marginTop: 10 }}>
-              <div className="legend"><span><i style={{ background: "var(--green)" }} />skutočnosť</span><span><i style={{ background: "var(--muted)" }} />predikcia deň vopred</span></div>
+              <div className="legend"><span><i style={{ background: "var(--green)" }} />{t("skutočnosť")}</span><span><i style={{ background: "var(--muted)" }} />{t("predikcia deň vopred")}</span></div>
               <Lines height={230} xLabels={bt.dni.map((r) => fmtD(r.datum))} series={[
                 { color: "var(--green)", points: bt.dni.map((r) => r.skut) },
                 { color: "var(--muted)", points: bt.dni.map((r) => r.pred) },
