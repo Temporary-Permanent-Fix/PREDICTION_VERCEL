@@ -42,10 +42,11 @@ a { color: var(--green2); }
 .livedot { width: 7px; height: 7px; border-radius: 50%; background: var(--green2); box-shadow: 0 0 0 0 rgba(0,184,74,0.55); }
 .masthead h1 { margin: 6px 0 0; font-size: 22px; font-weight: 800; letter-spacing: 0.3px; display: inline-block; padding-bottom: 7px; position: relative; }
 .masthead h1::after { content: ""; position: absolute; left: 0; bottom: 0; width: 46px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, var(--lime), var(--green2)); }
-.langsw { display: inline-flex; gap: 2px; }
-.langsw button { background: transparent; border: 1px solid transparent; border-radius: 7px; color: var(--muted); font-size: 10.5px; font-weight: 700; letter-spacing: 1px; padding: 2px 7px; cursor: pointer; font-family: var(--sans); }
+.navrow { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.langsw { display: inline-flex; align-items: center; gap: 3px; margin-top: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 4px 8px; color: var(--muted); }
+.langsw button { background: transparent; border: 1px solid transparent; border-radius: 7px; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: 0.6px; padding: 4px 9px; cursor: pointer; font-family: var(--sans); }
 .langsw button:hover { color: var(--text); }
-.langsw button.on { color: var(--lime); border-color: var(--border2); background: var(--card); }
+.langsw button.on { color: #06130a; background: linear-gradient(180deg, var(--lime), #2a9a1b); }
 .statusline { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 10px; display: flex; flex-wrap: wrap; gap: 14px; }
 .statusline b { color: var(--text); font-weight: 600; }
 .statusline .up { color: var(--green2); }
