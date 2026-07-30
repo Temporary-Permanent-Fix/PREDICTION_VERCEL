@@ -19,6 +19,16 @@ const ALLOWED = new Set([
   "kvalita_denne.csv", "zvoz_matica.json", "procesy_pomery.json", "kvalita_hodiny.json",
 ]);
 
+// súbory, ktorých zápis vyžaduje heslo (env VYKONY_HESLO); bez env je ochrana vypnutá
+const CHRANENE = new Set(["kpi.csv"]);
+
+function hesloOk(req, file) {
+  const ocakavane = process.env.VYKONY_HESLO;
+  if (!ocakavane || !CHRANENE.has(file)) return true;
+  const dane = req.headers.get("x-vykony-heslo") || "";
+  return dane === ocakavane;
+}
+
 function cfg() {
   return {
     token: process.env.GH_TOKEN,
@@ -47,6 +57,8 @@ export async function GET(req) {
 export async function POST(req) {
   const { file, content, message } = await req.json();
   if (!ALLOWED.has(file)) return Response.json({ error: "Neznámy súbor." }, { status: 400 });
+  if (!hesloOk(req, file))
+    return Response.json({ error: "Zmena výkonov je chránená heslom – odomkni ju v záložke Výkony." }, { status: 401 });
   const { token, repo, branch, dir } = cfg();
   if (!token || !repo)
     return Response.json({ error: "GitHub nie je nakonfigurovaný – zmeny platia len do obnovenia stránky." }, { status: 501 });
