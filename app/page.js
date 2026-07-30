@@ -100,6 +100,12 @@ const ICO = {
   prepocet: "M20 11a8 8 0 0 0-13.7-5.3L3 9M3 4v5h5m-4 4a8 8 0 0 0 13.7 5.3L21 15m0 5v-5h-5",
   vstup: "M12 5v14M5 12h14",
   anom: "M12 4 2.5 20h19L12 4Zm0 6v5m0 3h.01",
+  save: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2ZM8 3v6h7M8 21v-6h8v6",
+  trash: "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7m4 4v7m4-7v7",
+  export: "M12 16V4m0 0 4 4m-4-4L8 8M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2",
+  play: "M7 4.5v15l12-7.5-12-7.5Z",
+  search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Zm5.2-1.8L21 21",
+  info: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-13h.01M11 12h1v5h1",
 };
 function Ico({ n }) {
   const d = ICO[n];
@@ -228,7 +234,7 @@ export default function Page() {
   if (loadErr) return (
     <div className="shell"><div className="masthead">
       <h1>PREDIKCIA SKLC3</h1>
-      <div className="note" style={{ marginTop: 8, color: "var(--red)" }}>⚠️ Dáta sa nepodarilo načítať: {loadErr}</div>
+      <div className="note" style={{ marginTop: 8, color: "var(--red)" }}>Dáta sa nepodarilo načítať: {loadErr}</div>
       <div className="note">Skontroluj, či je súbor v repe v `public/data/` a či prebehol Redeploy.</div>
     </div></div>
   );
@@ -268,9 +274,9 @@ export default function Page() {
           {[["kvalita", "Kvalita"], ["udal", "Udalosti"], ["kpi", "KPI"], ["vykony", "Výkony"], ["model", "Model"]].map(([k, l]) =>
             <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}><Ico n={k} />{l}</button>)}
         </div>
-        {naZdroji && src === "distribucia" && <div className="note" style={{ marginTop: 8 }}>🔁 Distribúcia = preposielanie medzi skladmi (vrátane nočného batchu ~3:00). Objem riadi doplňovanie, nie zákaznícky dopyt – predikciu ber orientačnejšie než pri zákazníckych vznikoch.</div>}
-        {naZdroji && src === "prijem" && <div className="note" style={{ marginTop: 8 }}>📥 Príjem je riadený harmonogramom dodávok, nie zákazníckym dopytom – predikcia je orientačná (typická odchýlka ±20–40 %). Presnejší odhad by dali avíza dodávok.</div>}
-        {ghOk === false && <div className="note" style={{ marginTop: 8 }}>⚠️ GitHub zápis nie je nakonfigurovaný (env GH_TOKEN / GH_REPO) – zmeny platia len do obnovenia stránky.</div>}
+        {naZdroji && src === "distribucia" && <div className="note" style={{ marginTop: 8 }}>Distribúcia = preposielanie medzi skladmi (vrátane nočného batchu ~3:00). Objem riadi doplňovanie, nie zákaznícky dopyt – predikciu ber orientačnejšie než pri zákazníckych vznikoch.</div>}
+        {naZdroji && src === "prijem" && <div className="note" style={{ marginTop: 8 }}>Príjem je riadený harmonogramom dodávok, nie zákazníckym dopytom – predikcia je orientačná (typická odchýlka ±20–40 %). Presnejší odhad by dali avíza dodávok.</div>}
+        {ghOk === false && <div className="note" style={{ marginTop: 8 }}>GitHub zápis nie je nakonfigurovaný (env GH_TOKEN / GH_REPO) – zmeny platia len do obnovenia stránky.</div>}
       </div>
 
       {naZdroji && (
@@ -518,7 +524,7 @@ function TabPrepocet({ D, uda, src, priebeh, save, setPriebeh }) {
           </div>
           {Math.abs(diff) >= 0.15 && (
             <p className="note" style={{ color: "var(--amber)" }}>
-              ⚠️ Extrapolácia sa od modelovej predikcie líši o {(diff * 100).toFixed(0)} % – skontroluj dáta, alebo deň ovplyvňuje niečo, čo model nepozná (akcia / výpadok).
+              Extrapolácia sa od modelovej predikcie líši o {(diff * 100).toFixed(0)} % – skontroluj dáta, alebo deň ovplyvňuje niečo, čo model nepozná (akcia / výpadok).
             </p>
           )}
           <div className="section">
@@ -544,7 +550,7 @@ function TabPrepocet({ D, uda, src, priebeh, save, setPriebeh }) {
 
       <div className="section">
         <h3>Snímky priebehu</h3>
-        <button className="btn" disabled={!r.eod} onClick={saveSnap}>💾 Uložiť snímku</button>
+        <button className="btn" disabled={!r.eod} onClick={saveSnap}><Ico n="save" />Uložiť snímku</button>
         {snaps.length > 0 && (
           <table className="t" style={{ marginTop: 10 }}><thead><tr><th>Hodina</th><th>Vznik</th><th>Pick</th><th>Odhad EOD</th></tr></thead>
             <tbody>{snaps.map((s, i) => (
@@ -609,7 +615,7 @@ function TabVstup({ src, zaznamy, setZaznamy, vynimky, setVynimky, save }) {
           <select value={anom} onChange={(e) => setAnom(e.target.value)}>
             <option>Žiadna</option>{TYPY_VYNIMIEK.map((t) => <option key={t}>{t}</option>)}
           </select></div>
-        <button className="btn" disabled={poHodinach ? sumHodin === 0 : !total} onClick={uloz}>💾 Uložiť záznam</button>
+        <button className="btn" disabled={poHodinach ? sumHodin === 0 : !total} onClick={uloz}><Ico n="save" />Uložiť záznam</button>
       </div>
       <div className="frm" style={{ marginTop: 10 }}>
         <label style={{ fontSize: 13, color: "var(--muted)", display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
@@ -619,7 +625,7 @@ function TabVstup({ src, zaznamy, setZaznamy, vynimky, setVynimky, save }) {
       </div>
       {poHodinach && (
         <>
-          {anom !== "Žiadna" && <p className="note" style={{ color: "var(--amber)" }}>⚠️ Zaškrtni pri hodinách, ktoré boli ovplyvnené anomáliou „{anom}“ ({anomCnt} označených).</p>}
+          {anom !== "Žiadna" && <p className="note" style={{ color: "var(--amber)" }}>Zaškrtni pri hodinách, ktoré boli ovplyvnené anomáliou „{anom}“ ({anomCnt} označených).</p>}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))", gap: 6, marginTop: 8 }}>
             {OP_HOURS.map((h, i) => (
               <div className="fld" key={h} style={anomHod[i] && anom !== "Žiadna" ? { outline: "1px solid var(--amber)", borderRadius: 8, padding: 4 } : { padding: 4 }}>
@@ -650,7 +656,7 @@ function TabVstup({ src, zaznamy, setZaznamy, vynimky, setVynimky, save }) {
               return (
                 <tr key={d}><td>{fmtD(d)}{d.slice(0, 4)}</td><td>{nf.format(suma)}</td>
                   <td>{an ? <span className="pill amber">{an}{anH ? ` · ${anH} h` : ""}</span> : "–"}</td>
-                  <td><button className="btn ghost" onClick={() => zmaz(d)}>🗑️</button></td></tr>
+                  <td><button className="btn ghost" onClick={() => zmaz(d)}><Ico n="trash" /></button></td></tr>
               );
             })}</tbody></table>
         ) : <p className="note">Zatiaľ žiadne používateľské záznamy – model beží na baseline dátach.</p>}
@@ -771,7 +777,7 @@ function TabAnomalie({ D, uda, src, vynimky, setVynimky, save, kpi, pomery, back
           <div className="fld"><label>Typ výnimky</label>
             <select value={typ} onChange={(e) => setTyp(e.target.value)}>{TYPY_VYNIMIEK.map((t) => <option key={t}>{t}</option>)}</select></div>
           <div className="fld"><label>Popis (voliteľné)</label><input value={popis} onChange={(e) => setPopis(e.target.value)} /></div>
-          <button className="btn" onClick={uloz}>⚠️ Uložiť výnimku</button>
+          <button className="btn" onClick={uloz}><Ico n="save" />Uložiť výnimku</button>
         </div>
         <p className="note" style={{ marginTop: 8 }}>Postihnuté hodiny (voliteľné – nič neoznačené = celý deň):</p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
@@ -819,8 +825,8 @@ function TabAnomalie({ D, uda, src, vynimky, setVynimky, save, kpi, pomery, back
                     <td>{String(c.zh).padStart(2, "0")}:00</td><td>{nf.format(c.objem)}</td></tr>
                 ))}</tbody></table>
               <div className="frm" style={{ marginTop: 10 }}>
-                <button className="btn" disabled={uzPrenesene} onClick={prenesBacklog}>📤 Preniesť backlog do plánu ({[...new Set(blCiele.map((c) => c.datum))].map((d) => fmtD(d)).join(", ")})</button>
-                {uzPrenesene && <span className="note" style={{ alignSelf: "center" }}>✓ už prenesené – zrušiť sa dá v zozname nižšie</span>}
+                <button className="btn" disabled={uzPrenesene} onClick={prenesBacklog}><Ico n="export" />Preniesť backlog do plánu ({[...new Set(blCiele.map((c) => c.datum))].map((d) => fmtD(d)).join(", ")})</button>
+                {uzPrenesene && <span className="note" style={{ alignSelf: "center" }}>Už prenesené – zrušiť sa dá v zozname nižšie</span>}
               </div>
               <p className="note">Prenesený backlog sa pripočíta k objemom v záložkách KPI (človekohodiny) a Zvozy pre cieľové dni.</p>
             </>
@@ -838,7 +844,7 @@ function TabAnomalie({ D, uda, src, vynimky, setVynimky, save, kpi, pomery, back
                 <td><button className="btn ghost" onClick={() => {
                   const rows = backlogy.filter((_, j) => j !== i);
                   save("backlog.csv", rows, BCOLS, `data: zrušený backlog ${b.z_datum}`, setBacklogy);
-                }}>🗑️</button></td></tr>
+                }}><Ico n="trash" /></button></td></tr>
             ))}</tbody></table>
         </div>
       )}
@@ -851,7 +857,7 @@ function TabAnomalie({ D, uda, src, vynimky, setVynimky, save, kpi, pomery, back
               <tr key={v.datum}><td>{fmtD(v.datum)}{v.datum.slice(0, 4)}</td><td>{v.typ}</td>
                 <td>{v.hodiny ? <span className="pill amber">{v.hodiny}</span> : <span className="pill gray">celý deň</span>}</td>
                 <td style={{ fontFamily: "var(--sans)" }}>{v.popis}</td>
-                <td><button className="btn ghost" onClick={() => zmaz(v.datum)}>🗑️</button></td></tr>
+                <td><button className="btn ghost" onClick={() => zmaz(v.datum)}><Ico n="trash" /></button></td></tr>
             ))}</tbody></table>
         </div>
       )}
@@ -898,7 +904,7 @@ function TabUdalosti({ D, uda, setUdalosti, save }) {
         <div className="fld"><label>Od</label><input type="date" value={od} onChange={(e) => setOd(e.target.value)} /></div>
         <div className="fld"><label>Do</label><input type="date" value={doD} onChange={(e) => setDoD(e.target.value)} /></div>
         <div className="fld"><label>Koeficient</label><input type="number" step="0.01" min="0.3" max="2.5" value={koef} onChange={(e) => setKoef(+e.target.value)} /></div>
-        <button className="btn" disabled={!nazov.trim()} onClick={uloz}>📅 Uložiť udalosť</button>
+        <button className="btn" disabled={!nazov.trim()} onClick={uloz}><Ico n="save" />Uložiť udalosť</button>
       </div>
       {typ === "Black Friday" && <p className="note">Koeficient 1.36 vypočítaný z vznikov počas BF víkendu 2025 (27.11.–1.12.) oproti okolitým týždňom.</p>}
 
@@ -908,7 +914,7 @@ function TabUdalosti({ D, uda, setUdalosti, save }) {
             <tbody>{[...uda].sort((a, b) => (a.od < b.od ? 1 : -1)).map((u) => (
               <tr key={u.nazov}><td style={{ fontFamily: "var(--sans)" }}>{u.nazov}</td><td>{fmtD(u.od)}{u.od.slice(0, 4)}</td><td>{fmtD(u.do)}{u.do.slice(0, 4)}</td>
                 <td><span className="pill green">{u.typ}</span></td><td>×{(+u.koeficient).toFixed(2)}</td>
-                <td><button className="btn ghost" onClick={() => zmaz(u.nazov)}>🗑️</button></td></tr>
+                <td><button className="btn ghost" onClick={() => zmaz(u.nazov)}><Ico n="trash" /></button></td></tr>
             ))}</tbody></table>
         </div>
       )}
@@ -926,7 +932,7 @@ function TabUdalosti({ D, uda, setUdalosti, save }) {
         <div className="frm">
           <div className="fld"><label>Od</label><input type="date" value={eOd} onChange={(e) => setEOd(e.target.value)} /></div>
           <div className="fld"><label>Do</label><input type="date" value={eDo} onChange={(e) => setEDo(e.target.value)} /></div>
-          <button className="btn" onClick={spocitaj}>🔍 Vypočítať koeficient</button>
+          <button className="btn" onClick={spocitaj}><Ico n="search" />Vypočítať koeficient</button>
         </div>
         {odhad && <p className="note" style={{ color: "var(--text)" }}>{odhad}</p>}
       </div>
@@ -1068,7 +1074,7 @@ function TabVykony({ kpi, setKpi, save }) {
         </tbody>
       </table>
       <div className="frm" style={{ marginTop: 10 }}>
-        <button className="btn" disabled={!zmenene} onClick={uloz}>💾 Uložiť plošné výkony</button>
+        <button className="btn" disabled={!zmenene} onClick={uloz}><Ico n="save" />Uložiť plošné výkony</button>
         {zmenene && <span className="note" style={{ alignSelf: "center" }}>neuložené zmeny</span>}
       </div>
 
@@ -1140,22 +1146,22 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy }) {
   return (
     <>
       <p className="note">
-        Plošné výkony sa nastavujú v záložke <b>⚙️ Výkony</b>; tu sa zobrazujú a dá sa pridať <b>denná úprava</b>, ktorá ich pre vybraný deň prepíše (zaučanie, oslabená zmena…).
+        Plošné výkony sa nastavujú v záložke <b>Výkony</b>; tu sa zobrazujú a dá sa pridať <b>denná úprava</b>, ktorá ich pre vybraný deň prepíše (zaučanie, oslabená zmena…).
         Človekohodiny = objem ÷ efektívny výkon. Objemy sa predvypĺňajú z modelu a dajú sa prepísať.
       </p>
       <div className="frm" style={{ marginBottom: 12 }}>
         <div className="fld"><label>Prevádzkový deň</label>
           <input type="date" value={datum} onChange={(e) => { setDatum(e.target.value); setDenne(null); setOverride({}); }} /></div>
-        <button className="btn" onClick={ulozDen}>💾 Uložiť úpravu dňa {fmtD(datum)}</button>
+        <button className="btn" onClick={ulozDen}><Ico n="save" />Uložiť úpravu dňa {fmtD(datum)}</button>
       </div>
 
       {blNaDen.length > 0 && (
         <p className="note" style={{ color: "var(--amber)" }}>
-          📤 V objemoch dňa {fmtD(datum)} je zahrnutý prenesený backlog ({blNaDen.length} {blNaDen.length === 1 ? "položka" : "položky"}, spolu {nf.format(blNaDen.reduce((a, b) => a + +b.objem, 0))} JBL) – spravuje sa v záložke Anomálie.
+          V objemoch dňa {fmtD(datum)} je zahrnutý prenesený backlog ({blNaDen.length} {blNaDen.length === 1 ? "položka" : "položky"}, spolu {nf.format(blNaDen.reduce((a, b) => a + +b.objem, 0))} JBL) – spravuje sa v záložke Anomálie.
         </p>
       )}
       <table className="t">
-        <thead><tr><th>Proces</th><th>Plošný (⚙️)</th><th>Úprava pre {fmtD(datum)}</th><th>Efektívny</th><th>Objem (JBL)</th><th>Človekohodiny</th></tr></thead>
+        <thead><tr><th>Proces</th><th>Plošný</th><th>Úprava pre {fmtD(datum)}</th><th>Efektívny</th><th>Objem (JBL)</th><th>Človekohodiny</th></tr></thead>
         <tbody>
           {PROCESY.map((p) => (
             <tr key={p}>
@@ -1178,7 +1184,7 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy }) {
           </tr>
         </tbody>
       </table>
-      {blNaDen.length > 0 && <p className="note" style={{ color: "var(--amber)" }}>⚠️ Objemy zahŕňajú prenesený backlog z {blNaDen.map((b) => fmtD(b.z_datum)).join(", ")} (spolu {nf.format(blNaDen.reduce((a, b) => a + +b.objem, 0))} JBL v zdrojových jednotkách).</p>}
+      {blNaDen.length > 0 && <p className="note" style={{ color: "var(--amber)" }}>Objemy zahŕňajú prenesený backlog z {blNaDen.map((b) => fmtD(b.z_datum)).join(", ")} (spolu {nf.format(blNaDen.reduce((a, b) => a + +b.objem, 0))} JBL v zdrojových jednotkách).</p>}
       <p className="note">Čistý pracovný čas <b>11 h na zmenu, 2 zmeny denne</b>. {spolu > 0 ? `${nf1.format(spolu)} h ≈ ${nf1.format(spolu / 11)} osôb-zmien, t. j. ~${nf1.format(spolu / 11 / 2)} ľudí na zmenu pri rovnomernom rozdelení.` : "Doplň výkony pre prepočet."}</p>
 
       <div className="section">
@@ -1217,8 +1223,8 @@ function TabModel({ sources, vynD, uda }) {
   return (
     <>
       <div className="seg" style={{ marginBottom: 12 }}>
-        {[["vzniky", "🛒 Vzniky"], ["triedenie", "📦 Triedenie"], ["prijem", "📥 Príjem"], ["distribucia", "🔁 Distribúcia"]].map(([k, l]) =>
-          <button key={k} className={msrc === k ? "on" : ""} onClick={() => setMsrc(k)}>{l}</button>)}
+        {[["vzniky", "Vzniky"], ["triedenie", "Triedenie"], ["prijem", "Príjem"], ["distribucia", "Distribúcia"]].map(([k, l]) =>
+          <button key={k} className={msrc === k ? "on" : ""} onClick={() => setMsrc(k)}><Ico n={k} />{l}</button>)}
       </div>
       <p className="note">Predikcia = <b>úroveň s trendom</b> × <b>faktor dňa v týždni</b> × <b>faktor dňa v mesiaci</b> × <b>koeficient udalostí</b>.
         Dni s výnimkou sú z tréningu vylúčené, historické udalosti odfiltrované.</p>
@@ -1245,7 +1251,7 @@ function TabModel({ sources, vynD, uda }) {
       <div className="section">
         <h3>Backtest · presnosť predikcie „deň vopred“ (posledných 30 dní)</h3>
         <p className="note">Pre každý deň sa model natrénuje len na dátach do predchádzajúceho dňa a predikcia sa porovná so skutočnosťou – presne ako v reálnom použití. Dni s výnimkou sa preskakujú.</p>
-        {!bt && <button className="btn" disabled={btBusy} onClick={runBt}>{btBusy ? "Počítam…" : "▶️ Spustiť backtest"}</button>}
+        {!bt && <button className="btn" disabled={btBusy} onClick={runBt}>{btBusy ? "Počítam…" : <><Ico n="play" />Spustiť backtest</>}</button>}
         {bt && (
           <>
             <div className="grid g4">
