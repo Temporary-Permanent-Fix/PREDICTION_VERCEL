@@ -84,6 +84,33 @@ const Card = ({ lbl, val, sub, cls = "" }) => (
   <div className="card"><div className="lbl">{lbl}</div><div className={`val ${cls}`}>{val}</div>{sub && <div className="sub">{sub}</div>}</div>
 );
 
+// ---------------------------------------------------------- ikony (ako v hube)
+const ICO = {
+  vzniky: "M3 5h2.2l2.1 9.4a2 2 0 0 0 2 1.6h6.9a2 2 0 0 0 2-1.5L20 8H6.4M9.5 20h.01M16.5 20h.01",
+  triedenie: "M12 3 20.5 7.5v9L12 21l-8.5-4.5v-9L12 3ZM3.5 7.5 12 12l8.5-4.5M12 12v9",
+  prijem: "M12 3v10m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2",
+  distribucia: "M4 9a8 8 0 0 1 13.3-3.3L20 8M20 4v4h-4M20 15a8 8 0 0 1-13.3 3.3L4 16M4 20v-4h4",
+  kvalita: "M20 6 9.5 16.5 4 11",
+  udal: "M7 3v3m10-3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z",
+  kpi: "M4 20V10m5 10V4m5 16v-7m5 7V8",
+  vykony: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8.4-3a8.4 8.4 0 0 0-.15-1.5l2-1.6-2-3.4-2.4 1a8.4 8.4 0 0 0-2.6-1.5L15 2H9l-.35 2.5a8.4 8.4 0 0 0-2.6 1.5l-2.4-1-2 3.4 2 1.6a8.4 8.4 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a8.4 8.4 0 0 0 2.6 1.5L9 22h6l.35-2.5a8.4 8.4 0 0 0 2.6-1.5l2.4 1 2-3.4-2-1.6c.1-.5.15-1 .15-1.5Z",
+  model: "M12 4a3 3 0 0 0-3 3M12 4a3 3 0 0 1 3 3M9 7a3 3 0 0 0-3 3m12-3a3 3 0 0 1 3 3M6 10a3 3 0 0 0 1 5.6M18 10a3 3 0 0 1-1 5.6M7 15.6A3 3 0 0 0 12 20a3 3 0 0 0 5-4.4M12 8v12",
+  pred: "M4 18 9 11l4 3.2L20 6M20 6h-4.5M20 6v4.5",
+  zvoz: "M3 7h10v9H3zM13 10h4l3 3v3h-7zM7.5 19a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2Zm9 0a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2Z",
+  prepocet: "M20 11a8 8 0 0 0-13.7-5.3L3 9M3 4v5h5m-4 4a8 8 0 0 0 13.7 5.3L21 15m0 5v-5h-5",
+  vstup: "M12 5v14M5 12h14",
+  anom: "M12 4 2.5 20h19L12 4Zm0 6v5m0 3h.01",
+};
+function Ico({ n }) {
+  const d = ICO[n];
+  if (!d) return null;
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={d} />
+    </svg>
+  );
+}
+
 // ------------------------------------------------------------------- stránka
 export default function Page() {
   const [tab, setTab] = useState("pred");
@@ -219,6 +246,7 @@ export default function Page() {
   return (
     <div className="shell">
       <div className="masthead">
+        <div className="eyebrow"><span className="livedot" /> SKLC3 · LOGISTIKA</div>
         <h1>PREDIKCIA SKLC3</h1>
         <div className="statusline">
           <span>deň <b>06:00–06:00</b></span>
@@ -234,11 +262,11 @@ export default function Page() {
           )}
         </div>
         <div className="srcswitch" role="tablist" aria-label="Sekcia">
-          {[["vzniky", "🛒 Vzniky"], ["triedenie", "📦 Triedenie"], ["prijem", "📥 Príjem"], ["distribucia", "🔁 Distribúcia"]].map(([k, l]) =>
-            <button key={k} className={naZdroji && src === k ? "on" : ""} onClick={() => prepniZdroj(k)}>{l}</button>)}
+          {[["vzniky", "Vzniky"], ["triedenie", "Triedenie"], ["prijem", "Príjem"], ["distribucia", "Distribúcia"]].map(([k, l]) =>
+            <button key={k} className={naZdroji && src === k ? "on" : ""} onClick={() => prepniZdroj(k)}><Ico n={k} />{l}</button>)}
           <span style={{ alignSelf: "center", color: "var(--border)", padding: "0 2px", userSelect: "none" }}>│</span>
-          {[["kvalita", "✅ Kvalita"], ["udal", "📅 Udalosti"], ["kpi", "🧮 KPI"], ["vykony", "⚙️ Výkony"], ["model", "🧠 Model"]].map(([k, l]) =>
-            <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}
+          {[["kvalita", "Kvalita"], ["udal", "Udalosti"], ["kpi", "KPI"], ["vykony", "Výkony"], ["model", "Model"]].map(([k, l]) =>
+            <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}><Ico n={k} />{l}</button>)}
         </div>
         {naZdroji && src === "distribucia" && <div className="note" style={{ marginTop: 8 }}>🔁 Distribúcia = preposielanie medzi skladmi (vrátane nočného batchu ~3:00). Objem riadi doplňovanie, nie zákaznícky dopyt – predikciu ber orientačnejšie než pri zákazníckych vznikoch.</div>}
         {naZdroji && src === "prijem" && <div className="note" style={{ marginTop: 8 }}>📥 Príjem je riadený harmonogramom dodávok, nie zákazníckym dopytom – predikcia je orientačná (typická odchýlka ±20–40 %). Presnejší odhad by dali avíza dodávok.</div>}
@@ -247,9 +275,9 @@ export default function Page() {
 
       {naZdroji && (
         <div className="tabs">
-          {[["pred", "🔮 Predikcia"], ...(src === "vzniky" ? [["zvoz", "🚚 Zvozy"]] : []), ["prepocet", "🔄 Prepočet predikcie"],
-            ["vstup", "➕ Zadávanie dát"], ["anom", "⚠️ Anomálie"]]
-            .map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}
+          {[["pred", "Predikcia"], ...(src === "vzniky" ? [["zvoz", "Zvozy"]] : []), ["prepocet", "Prepočet predikcie"],
+            ["vstup", "Zadávanie dát"], ["anom", "Anomálie"]]
+            .map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}><Ico n={k} />{l}</button>)}
         </div>
       )}
 
@@ -1021,11 +1049,11 @@ function TabVykony({ kpi, setKpi, save }) {
     save("kpi.csv", rows, COLS, "data: plošné výkony procesov", setKpi);
   };
   const denne = kpi.filter((k) => k.datum && +k.vykon > 0).sort((a, b) => (a.datum < b.datum ? 1 : -1));
-  const inp = { width: 110, background: "#0d1117", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 9px", fontFamily: "var(--mono)" };
+  const inp = { width: 110, background: "var(--field)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 9px", fontFamily: "var(--mono)" };
 
   return (
     <>
-      <p className="note">Plošné výkony (JBL na osobu a hodinu) platia pre <b>všetky dni</b> – používa ich Predikcia (hodiny na spracovanie), KPI aj backlog. Úpravy pre konkrétne dni sa spravujú v záložke 🧮 KPI a majú pred plošnými prednosť.</p>
+      <p className="note">Plošné výkony (JBL na osobu a hodinu) platia pre <b>všetky dni</b> – používa ich Predikcia (hodiny na spracovanie), KPI aj backlog. Úpravy pre konkrétne dni sa spravujú v záložke KPI a majú pred plošnými prednosť.</p>
       <table className="t" style={{ maxWidth: 560 }}>
         <thead><tr><th>Proces</th><th>Aktuálne uložené</th><th>Nová hodnota</th></tr></thead>
         <tbody>
@@ -1055,7 +1083,7 @@ function TabVykony({ kpi, setKpi, save }) {
             ))}</tbody>
           </table>
         ) : <p className="note">Žiadne – všetky dni idú podľa plošných výkonov.</p>}
-        <p className="note">Pridať alebo zmeniť dennú úpravu: záložka 🧮 KPI → stĺpec „Úprava pre deň“.</p>
+        <p className="note">Pridať alebo zmeniť dennú úpravu: záložka KPI → stĺpec „Úprava pre deň“.</p>
       </div>
     </>
   );
@@ -1107,7 +1135,7 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy }) {
   const prof = selProc === "Príjem" ? TP.prijem.prof : TP.triedenie.prof;
   const p24 = prof[String(dow(datum) >= 5)];
   const selVyk = vykEff(selProc) || null;
-  const inp = { width: 90, background: "#0d1117", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 8px", fontFamily: "var(--mono)" };
+  const inp = { width: 90, background: "var(--field)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 8px", fontFamily: "var(--mono)" };
 
   return (
     <>
@@ -1132,7 +1160,7 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy }) {
           {PROCESY.map((p) => (
             <tr key={p}>
               <td style={{ fontFamily: "var(--sans)" }}>{p}{p !== "Príjem" && pomery[p] && pomery[p] !== 1 ? ` (×${pomery[p].toFixed(2)})` : ""}</td>
-              <td className={+globVal[p] > 0 ? "accent" : ""} style={{ fontWeight: 650 }}>{+globVal[p] > 0 ? globVal[p] : <span className="pill gray">v ⚙️ Výkony</span>}</td>
+              <td className={+globVal[p] > 0 ? "accent" : ""} style={{ fontWeight: 650 }}>{+globVal[p] > 0 ? globVal[p] : <span className="pill gray">vo Výkonoch</span>}</td>
               <td><input type="number" min="0" placeholder="–" style={{ ...inp, borderColor: denVal[p] !== "" ? "var(--amber)" : "var(--border)" }} value={denVal[p]}
                 onChange={(e) => setDenne({ ...denVal, [p]: e.target.value })} /></td>
               <td className={denVal[p] !== "" ? "warn" : ""} style={{ fontWeight: 650 }}>{vykEff(p) || "–"}</td>
