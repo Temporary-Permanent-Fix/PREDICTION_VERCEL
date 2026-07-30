@@ -12,7 +12,12 @@ function ghHint(status) {
   return `GitHub ${status}`;
 }
 
-const ALLOWED = new Set(["zaznamy.csv", "vynimky.csv", "udalosti.csv", "priebeh.csv", "kpi.csv", "backlog.csv"]);
+// zapisovateľné: prevádzkové záznamy + baseline dáta z importu Excelu
+const ALLOWED = new Set([
+  "zaznamy.csv", "vynimky.csv", "udalosti.csv", "priebeh.csv", "kpi.csv", "backlog.csv",
+  "vzniky_hodinove.csv", "distribucia_hodinove.csv", "baseline_hodinove.csv", "prijem_hodinove.csv",
+  "kvalita_denne.csv", "zvoz_matica.json", "procesy_pomery.json", "kvalita_hodiny.json",
+]);
 
 function cfg() {
   return {
