@@ -1007,7 +1007,7 @@ function TabVykony({ kpi, setKpi, save }) {
   const PROCESY = ["Príjem", "Pick", "Pack", "Sort"];
   const COLS = ["proces", "vykon", "datum"];
   const [glob, setGlob] = useState(null);
-  const globVal = Object.fromEntries(PROCESY.map((p) => {
+  const globVal = glob ?? Object.fromEntries(PROCESY.map((p) => {
     const r = kpi.find((k) => k.proces === p && !k.datum);
     return [p, r ? String(r.vykon) : ""];
   }));
