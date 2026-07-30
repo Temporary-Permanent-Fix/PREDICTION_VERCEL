@@ -266,7 +266,7 @@ export default function Page() {
     <div className="shell"><div className="masthead">
       <h1>PREDIKCIA SKLC3</h1>
       <div className="note" style={{ marginTop: 8, color: "var(--red)" }}>Dáta sa nepodarilo načítať: {loadErr}</div>
-      <div className="note">Skontroluj, či je súbor v repe v `public/data/` a či prebehol Redeploy.</div>
+      <div className="note">{t("Skontroluj, či je súbor v repe a či prebehol Redeploy.")}</div>
     </div></div>
   );
   if (!D || !V || !TP) return <div className="shell"><div className="note">{t("Načítavam dáta…")}</div></div>;
@@ -291,7 +291,7 @@ export default function Page() {
           {naZdroji && (
             <>
               <span>{t("zdroj")}{" "}<b>{t({ vzniky: "vzniky (zákaznícke)", triedenie: "triedenie (expedícia)", prijem: "príjem (received)", distribucia: "distribúcia (medzisklad)" }[src])}</b></span>
-              <span>{t("tréning")}{" "}<b>{model.trainDays} dní</b></span>
+              <span>{t("tréning")}{" "}<b>{model.trainDays} {t("dní")}</b></span>
               <span>{t("posledné dáta")}{" "}<b>{fmtD(model.lastDate)}{model.lastDate.slice(0, 4)}</b></span>
               <span>{t("úroveň")}{" "}<b>{nf.format(model.levelNow)}</b> {t("JBL/deň")}</span>
               <span className={trendPct}>{t("trend")} {model.slope >= 0 ? "▲" : "▼"} {nf.format(Math.abs(model.slope))}{t("/deň")}</span>
@@ -427,7 +427,7 @@ function TabPredikcia({ D, uda, src, kpi, pomery, backlogy }) {
       <div className="section">
         <h3>{t("Hodinová predikcia")} · {fmtD(datum)}</h3>
         <div className="chartbox"><Bars data={OP_HOURS.map((h) => ({ x: String(h).padStart(2, "0"), y: pred * p[h] }))} /></div>
-        <p className="note">Prevádzkový deň {String(OP_START).padStart(2, "0")}:00 – {String(OP_START).padStart(2, "0")}:00 nasledujúceho dňa.</p>
+        <p className="note">{t("Prevádzkový deň")} {String(OP_START).padStart(2, "0")}:00 – {String(OP_START).padStart(2, "0")}:00 {t("nasledujúceho dňa.")}</p>
       </div>
 
       <div className="section">
@@ -640,7 +640,7 @@ function TabVstup({ src, zaznamy, setZaznamy, vynimky, setVynimky, save }) {
 
   return (
     <>
-      <p className="note">Spätné zadanie skutočných jobline pre zdroj <b>{src}</b>. Záznam prepíše baseline pre daný deň.
+      <p className="note">{t("Spätné zadanie skutočných jobline pre zdroj")} <b>{t(src)}</b>. {t("Záznam prepíše baseline pre daný deň.")}
         Anomália obmedzená na konkrétne hodiny deň z modelu nevyhodí – postihnuté hodiny sa dopočítajú z profilu
         a deficit sa vyčísli ako backlog (záložka Anomálie).</p>
       <div className="frm">
@@ -657,7 +657,7 @@ function TabVstup({ src, zaznamy, setZaznamy, vynimky, setVynimky, save }) {
       <div className="frm" style={{ marginTop: 10 }}>
         <label style={{ fontSize: 13, color: "var(--muted)", display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
           <input type="checkbox" checked={poHodinach} onChange={(e) => setPoHodinach(e.target.checked)} />
-          Zadať po hodinách (prevádzkový deň 06:00 → 05:00)
+          {t("Zadať po hodinách (prevádzkový deň 06:00 → 05:00)")}
         </label>
       </div>
       {poHodinach && (
@@ -1060,7 +1060,7 @@ function TabKvalita({ staticData }) {
             <div className="fld"><label>{t("Proces")}</label>
               <select value={selProc || procesy[0]} onChange={(e) => setSelProc(e.target.value)}>{procesy.map((p) => <option key={p}>{p}</option>)}</select></div>
           </div>
-          <h3>{t("Kvalita podľa hodiny dňa · posledných")} {hod.dni} dní · priemer denných hodinových kvalít</h3>
+          <h3>{t("Kvalita podľa hodiny dňa · posledných")} {hod.dni} {t("dní · priemer denných hodinových kvalít")}</h3>
           <div className="chartbox">
             <Bars color="var(--amber)" height={200} data={OP_HOURS.map((h) => ({ x: String(h).padStart(2, "0"), y: (hod.profil[selProc || procesy[0]] || [])[h] ?? 0 }))} />
           </div>
@@ -1143,7 +1143,7 @@ function TabVykony({ kpi, setKpi, save, chranene, heslo, setHeslo, show }) {
           )}
         </div>
       )}
-      <p className="note">Plošné výkony (JBL na osobu a hodinu) platia pre <b>všetky dni</b> – používa ich Predikcia (hodiny na spracovanie), KPI aj backlog. Úpravy pre konkrétne dni sa spravujú v záložke KPI a majú pred plošnými prednosť.</p>
+      <p className="note">{t("Plošné výkony (JBL na osobu a hodinu) platia pre všetky dni – používa ich Predikcia (hodiny na spracovanie), KPI aj backlog. Úpravy pre konkrétne dni sa spravujú v záložke KPI a majú pred plošnými prednosť.")}</p>
       <table className="t" style={{ maxWidth: 560 }}>
         <thead><tr><th>{t("Proces")}</th><th>{t("Aktuálne uložené")}</th><th>{t("Nová hodnota")}</th></tr></thead>
         <tbody>
@@ -1231,7 +1231,7 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy, odomknute = true
   return (
     <>
       <p className="note">
-        Plošné výkony sa nastavujú v záložke <b>Výkony</b>; tu sa zobrazujú a dá sa pridať <b>denná úprava</b>, ktorá ich pre vybraný deň prepíše (zaučanie, oslabená zmena…).
+        {t("Plošné výkony sa nastavujú v záložke")} <b>{t("Výkony")}</b>; tu sa zobrazujú a dá sa pridať <b>denná úprava</b>, ktorá ich pre vybraný deň prepíše (zaučanie, oslabená zmena…).
         Človekohodiny = objem ÷ efektívny výkon. Objemy sa predvypĺňajú z modelu a dajú sa prepísať.
       </p>
       <div className="frm" style={{ marginBottom: 12 }}>
@@ -1270,7 +1270,7 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy, odomknute = true
           </tr>
         </tbody>
       </table>
-      {blNaDen.length > 0 && <p className="note" style={{ color: "var(--amber)" }}>Objemy zahŕňajú prenesený backlog z {blNaDen.map((b) => fmtD(b.z_datum)).join(", ")} (spolu {nf.format(blNaDen.reduce((a, b) => a + +b.objem, 0))} JBL v zdrojových jednotkách).</p>}
+      {blNaDen.length > 0 && <p className="note" style={{ color: "var(--amber)" }}>Objemy zahŕňajú prenesený backlog z {blNaDen.map((b) => fmtD(b.z_datum)).join(", ")} (spolu {nf.format(blNaDen.reduce((a, b) => a + +b.objem, 0))} {t("JBL v zdrojových jednotkách).")}</p>}
       <p className="note">Čistý pracovný čas <b>11 h na zmenu, 2 zmeny denne</b>. {spolu > 0 ? `${nf1.format(spolu)} h ≈ ${nf1.format(spolu / 11)} osôb-zmien, t. j. ~${nf1.format(spolu / 11 / 2)} ľudí na zmenu pri rovnomernom rozdelení.` : "Doplň výkony pre prepočet."}</p>
 
       <div className="section">
@@ -1282,7 +1282,7 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy, odomknute = true
         {selVyk ? (
           <div className="chartbox">
             <Bars color="var(--blue)" data={OP_HOURS.map((h) => ({ x: String(h).padStart(2, "0"), y: (objem(selProc) * p24[h]) / selVyk }))} />
-            <p className="note">Hodinový objem ÷ efektívny výkon = počet ľudí v danej hodine (profil {selProc === "Príjem" ? "príjmu" : "triedenia"}, prevádzkový deň).</p>
+            <p className="note">{t("Hodinový objem ÷ efektívny výkon = počet ľudí v danej hodine")} ({t("profil")} {selProc === "Príjem" ? t("príjmu") : t("triedenia")}, {t("prevádzkový deň")}).</p>
           </div>
         ) : <p className="note">Zadaj výkon procesu {selProc}, aby sa zobrazil hodinový plán.</p>}
       </div>
@@ -1356,8 +1356,8 @@ function TabImport({ saveRaw, show, ghOk }) {
     <>
       <p className="note">
         Nahraj nový Excel export a appka si z neho sama pripraví dátové súbory. Rozpozná
-        <b> OLAP_PREDICTION</b> (vzniky, distribúcia, zvozy), <b>VOLUMES</b> (príjem, triedenie, pomery procesov)
-        a <b>QUALITY</b> (kvalita). Naraz môžeš vybrať aj všetky tri.
+        <b> OLAP_PREDICTION</b> {t("(vzniky, distribúcia, zvozy)")}, <b>VOLUMES</b> {t("(príjem, triedenie, pomery procesov)")}
+        a <b>QUALITY</b> {t("(kvalita). Naraz môžeš vybrať aj všetky tri.")}
       </p>
 
       <div style={{ border: "1px dashed var(--border2)", borderRadius: "var(--r)", padding: "22px 18px", textAlign: "center", background: "var(--card)" }}
@@ -1437,7 +1437,7 @@ function TabModel({ sources, vynD, uda }) {
         {[["vzniky", "Vzniky"], ["triedenie", "Triedenie"], ["prijem", "Príjem"], ["distribucia", "Distribúcia"]].map(([k, l]) =>
           <button key={k} className={msrc === k ? "on" : ""} onClick={() => setMsrc(k)}><Ico n={k} />{t(l)}</button>)}
       </div>
-      <p className="note">Predikcia = <b>úroveň s trendom</b> × <b>faktor dňa v týždni</b> × <b>faktor dňa v mesiaci</b> × <b>koeficient udalostí</b>.
+      <p className="note">{t("Predikcia")} = <b>{t("úroveň s trendom")}</b> × <b>{t("faktor dňa v týždni")}</b> × <b>{t("faktor dňa v mesiaci")}</b> × <b>{t("koeficient udalostí")}</b>.
         Dni s výnimkou sú z tréningu vylúčené, historické udalosti odfiltrované.</p>
       <div className="grid g2">
         <div className="chartbox">
@@ -1493,7 +1493,7 @@ function TabModel({ sources, vynD, uda }) {
         trend <b>{model.slope >= 0 ? "+" : ""}{nf.format(model.slope)}/deň</b> (tlmený, ~50 % po 30 dňoch) ·
         krátkodobá korekcia <b>×{(model.corr ?? 1).toFixed(2)}</b> (medián posledných 5 dní vs. model, do budúcnosti sa vytráca) ·
         variabilita rezíduí <b>±{(model.residStd * 100).toFixed(0)} %</b> (základ 80 % intervalu) ·
-        tréningové dni <b>{model.trainDays}</b>
+        {t("tréningové dni")} <b>{model.trainDays}</b>
       </p>
     </>
   );
