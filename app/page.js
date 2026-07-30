@@ -100,6 +100,7 @@ const ICO = {
   prepocet: "M20 11a8 8 0 0 0-13.7-5.3L3 9M3 4v5h5m-4 4a8 8 0 0 0 13.7 5.3L21 15m0 5v-5h-5",
   vstup: "M12 5v14M5 12h14",
   anom: "M12 4 2.5 20h19L12 4Zm0 6v5m0 3h.01",
+  import: "M12 15V3m0 12-4-4m4 4 4-4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4",
   save: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2ZM8 3v6h7M8 21v-6h8v6",
   trash: "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7m4 4v7m4-7v7",
   export: "M12 16V4m0 0 4 4m-4-4L8 8M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2",
@@ -135,23 +136,34 @@ export default function Page() {
   useEffect(() => {
     (async () => {
       try {
-      const need = async (url, kind) => {
-        const r = await fetch(url);
-        if (!r.ok) throw new Error(`Chýba súbor ${url} (HTTP ${r.status})`);
-        return kind === "json" ? r.json() : r.text();
+      // dátové súbory: najprv z GitHubu (aktuálne po importe Excelu), inak z buildu
+      const dataText = async (file, povinny = false) => {
+        try {
+          const g = await fetch(`/api/gh?file=${file}`, { cache: "no-store" });
+          if (g.ok) return (await g.json()).content;
+        } catch {}
+        const r = await fetch(`/data/${file}`);
+        if (!r.ok) {
+          if (povinny) throw new Error(`Chýba súbor ${file} (HTTP ${r.status})`);
+          return "";
+        }
+        return r.text();
       };
-      const [vz, tr, pr, ds, mt] = await Promise.all([
-        need("/data/vzniky_hodinove.csv"),
-        need("/data/baseline_hodinove.csv"),
-        fetch("/data/prijem_hodinove.csv").then((r) => (r.ok ? r.text() : "")).catch(() => ""),
-        fetch("/data/distribucia_hodinove.csv").then((r) => (r.ok ? r.text() : "")).catch(() => ""),
-        need("/data/zvoz_matica.json", "json"),
+      const [vz, tr, pr, ds, mtTxt] = await Promise.all([
+        dataText("vzniky_hodinove.csv", true),
+        dataText("baseline_hodinove.csv", true),
+        dataText("prijem_hodinove.csv"),
+        dataText("distribucia_hodinove.csv"),
+        dataText("zvoz_matica.json", true),
       ]);
-      const [kvD, kvH, pom] = await Promise.all([
-        fetch("/data/kvalita_denne.csv").then((r) => r.text()).catch(() => ""),
-        fetch("/data/kvalita_hodiny.json").then((r) => r.json()).catch(() => null),
-        fetch("/data/procesy_pomery.json").then((r) => r.json()).catch(() => null),
+      const mt = JSON.parse(mtTxt);
+      const [kvD, kvHTxt, pomTxt] = await Promise.all([
+        dataText("kvalita_denne.csv"),
+        dataText("kvalita_hodiny.json"),
+        dataText("procesy_pomery.json"),
       ]);
+      const kvH = kvHTxt ? JSON.parse(kvHTxt) : null;
+      const pom = pomTxt ? JSON.parse(pomTxt) : null;
       setStaticData({
         vzniky: dropIncompleteLastOpDay(opShift(parseCSV(vz))),
         triedenie: dropIncompleteLastOpDay(opShift(parseCSV(tr))),
@@ -193,6 +205,14 @@ export default function Page() {
       if (r.ok) show(`Uložené a commitnuté: ${file}`);
       else show((await r.json()).error || "Uložené len lokálne.", true);
     } catch { show("Uložené len lokálne (bez pripojenia).", true); }
+  };
+
+  const saveRaw = async (file, content, message) => {
+    const r = await fetch("/api/gh", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file, content, message }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || `Zápis ${file} zlyhal.`);
   };
 
   // ---- odvodené dáta pre zvolený zdroj
@@ -243,7 +263,7 @@ export default function Page() {
   const uda = udalosti;
 
   const trendPct = model.slope >= 0 ? "up" : "down";
-  const STANDALONE = ["kvalita", "udal", "kpi", "vykony", "model"];
+  const STANDALONE = ["kvalita", "udal", "kpi", "vykony", "model", "import"];
   const naZdroji = !STANDALONE.includes(tab);
   const prepniZdroj = (key) => {
     setSrc(key);
@@ -271,7 +291,7 @@ export default function Page() {
           {[["vzniky", "Vzniky"], ["triedenie", "Triedenie"], ["prijem", "Príjem"], ["distribucia", "Distribúcia"]].map(([k, l]) =>
             <button key={k} className={naZdroji && src === k ? "on" : ""} onClick={() => prepniZdroj(k)}><Ico n={k} />{l}</button>)}
           <span style={{ alignSelf: "center", color: "var(--border)", padding: "0 2px", userSelect: "none" }}>│</span>
-          {[["kvalita", "Kvalita"], ["udal", "Udalosti"], ["kpi", "KPI"], ["vykony", "Výkony"], ["model", "Model"]].map(([k, l]) =>
+          {[["kvalita", "Kvalita"], ["udal", "Udalosti"], ["kpi", "KPI"], ["vykony", "Výkony"], ["model", "Model"], ["import", "Dáta"]].map(([k, l]) =>
             <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}><Ico n={k} />{l}</button>)}
         </div>
         {naZdroji && src === "distribucia" && <div className="note" style={{ marginTop: 8 }}>Distribúcia = preposielanie medzi skladmi (vrátane nočného batchu ~3:00). Objem riadi doplňovanie, nie zákaznícky dopyt – predikciu ber orientačnejšie než pri zákazníckych vznikoch.</div>}
@@ -296,6 +316,7 @@ export default function Page() {
       {tab === "kvalita" && <TabKvalita staticData={staticData} />}
       {tab === "kpi" && <TabKPI TP={TP} uda={uda} pomery={staticData.pomery} kpi={kpi} setKpi={setKpi} save={save} backlogy={backlogy} />}
       {tab === "vykony" && <TabVykony kpi={kpi} setKpi={setKpi} save={save} />}
+      {tab === "import" && <TabImport saveRaw={saveRaw} show={show} ghOk={ghOk} />}
       {tab === "model" && <TabModel sources={{ vzniky: { ...V, vynD: vynimky.map((v) => v.datum) }, triedenie: TP.triedenie, prijem: TP.prijem, distribucia: TP.distribucia }} vynD={vynimky.map((v) => v.datum)} uda={uda} />}
 
       {toast && <div className={`toast ${toast.err ? "err" : ""}`}>{toast.msg}</div>}
@@ -1199,6 +1220,136 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy }) {
             <p className="note">Hodinový objem ÷ efektívny výkon = počet ľudí v danej hodine (profil {selProc === "Príjem" ? "príjmu" : "triedenia"}, prevádzkový deň).</p>
           </div>
         ) : <p className="note">Zadaj výkon procesu {selProc}, aby sa zobrazil hodinový plán.</p>}
+      </div>
+    </>
+  );
+}
+
+// ------------------------------------------------------------ Dáta (import)
+const POPIS_SUBOROV = {
+  "vzniky_hodinove.csv": "zákaznícke vzniky po hodinách",
+  "distribucia_hodinove.csv": "distribúcia (medzisklad) po hodinách",
+  "zvoz_matica.json": "matica zvozov, harmonogram a sloty",
+  "prijem_hodinove.csv": "príjem po hodinách",
+  "baseline_hodinove.csv": "triedenie po hodinách",
+  "procesy_pomery.json": "pomery Pick/Pack/Príjem voči triedeniu",
+  "kvalita_denne.csv": "kvalita po dňoch a procesoch",
+  "kvalita_hodiny.json": "hodinový profil kvality",
+};
+
+function TabImport({ saveRaw, show, ghOk }) {
+  const [vysledky, setVysledky] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [ukladam, setUkladam] = useState(false);
+
+  const spracuj = async (files) => {
+    if (!files?.length) return;
+    setBusy(true);
+    const nove = [];
+    try {
+      const XLSX = await import("xlsx");
+      const { detekuj, prevod, POPIS_TYPU } = await import("../lib/importuj");
+      for (const f of files) {
+        try {
+          const wb = XLSX.read(await f.arrayBuffer(), { cellDates: true });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const typ = detekuj(ws, XLSX);
+          if (!typ) throw new Error("Formát sa nepodarilo rozpoznať – čakám OLAP, VOLUMES alebo QUALITY export.");
+          const { subory, suhrn } = prevod(typ, ws, XLSX);
+          nove.push({ nazov: f.name, typ, popisTypu: POPIS_TYPU[typ], suhrn, subory });
+        } catch (e) {
+          nove.push({ nazov: f.name, chyba: String(e.message || e) });
+        }
+      }
+    } catch (e) {
+      nove.push({ nazov: "—", chyba: "Načítanie knižnice zlyhalo: " + String(e.message || e) });
+    }
+    setVysledky((v) => [...v.filter((x) => !nove.some((n) => n.nazov === x.nazov)), ...nove]);
+    setBusy(false);
+  };
+
+  const ok = vysledky.filter((v) => v.subory);
+  const spolu = ok.reduce((a, v) => a + Object.keys(v.subory).length, 0);
+
+  const ulozVsetko = async () => {
+    setUkladam(true);
+    try {
+      for (const v of ok) {
+        for (const [nazov, obsah] of Object.entries(v.subory)) {
+          await saveRaw(nazov, obsah, `data: import ${v.typ} (${v.nazov})`);
+        }
+      }
+      show(`Uložených ${spolu} súborov – načítavam nové dáta…`);
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (e) {
+      show(String(e.message || e), true);
+      setUkladam(false);
+    }
+  };
+
+  return (
+    <>
+      <p className="note">
+        Nahraj nový Excel export a appka si z neho sama pripraví dátové súbory. Rozpozná
+        <b> OLAP_PREDICTION</b> (vzniky, distribúcia, zvozy), <b>VOLUMES</b> (príjem, triedenie, pomery procesov)
+        a <b>QUALITY</b> (kvalita). Naraz môžeš vybrať aj všetky tri.
+      </p>
+
+      <div style={{ border: "1px dashed var(--border2)", borderRadius: "var(--r)", padding: "22px 18px", textAlign: "center", background: "var(--card)" }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); spracuj([...e.dataTransfer.files]); }}>
+        <input id="xlsin" type="file" accept=".xlsx,.xls" multiple style={{ display: "none" }}
+          onChange={(e) => spracuj([...e.target.files])} />
+        <label htmlFor="xlsin" className="btn" style={{ cursor: "pointer" }}>
+          <Ico n="import" />{busy ? "Spracúvam…" : "Vybrať Excel súbory"}
+        </label>
+        <p className="note" style={{ margin: "10px 0 0" }}>alebo súbory sem pretiahni · spracovanie beží v prehliadači, nič sa nikam neposiela</p>
+      </div>
+
+      {vysledky.length > 0 && (
+        <div className="section">
+          <h3>Rozpoznané súbory</h3>
+          <table className="t">
+            <thead><tr><th>Súbor</th><th>Typ</th><th>Obsah</th><th>Pripravené dáta</th></tr></thead>
+            <tbody>{vysledky.map((v) => (
+              <tr key={v.nazov}>
+                <td style={{ fontFamily: "var(--sans)" }}>{v.nazov}</td>
+                <td>{v.chyba ? <span className="pill red">chyba</span> : <span className="pill green">{v.typ}</span>}</td>
+                <td style={{ fontFamily: "var(--sans)" }} className={v.chyba ? "bad" : ""}>{v.chyba || v.suhrn}</td>
+                <td style={{ fontFamily: "var(--sans)" }}>{v.subory ? Object.keys(v.subory).map((n) => (
+                  <div key={n}>{n} <span className="note" style={{ margin: 0 }}>· {POPIS_SUBOROV[n] || ""}</span></div>
+                )) : "–"}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+
+          {ok.length > 0 && (
+            <>
+              <div className="frm" style={{ marginTop: 12 }}>
+                <button className="btn" disabled={ukladam || ghOk === false} onClick={ulozVsetko}>
+                  <Ico n="save" />{ukladam ? "Ukladám…" : `Uložiť ${spolu} súborov a načítať`}
+                </button>
+                <button className="btn ghost" disabled={ukladam} onClick={() => setVysledky([])}>
+                  <Ico n="trash" />Zahodiť
+                </button>
+              </div>
+              <p className="note">
+                {ghOk === false
+                  ? "GitHub zápis nie je nakonfigurovaný (env GH_TOKEN / GH_REPO) – bez neho sa dáta uložiť nedajú."
+                  : "Uloží dátové súbory do repozitára a hneď ich načíta. Redeploy netreba – appka číta tieto súbory priamo z GitHubu."}
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
+      <div className="section">
+        <h3>Ako často importovať</h3>
+        <p className="note">
+          Model kotví predikciu na posledné dni skutočnosti, takže čerstvý OLAP export raz týždenne drží presnosť na
+          úrovni „deň vopred“. VOLUMES a QUALITY stačí podľa potreby – ovplyvňujú triedenie, príjem a kvalitu.
+          Medzi importmi vieš jednotlivé dni dopĺňať ručne v Zadávaní dát.
+        </p>
       </div>
     </>
   );
