@@ -210,7 +210,7 @@ export default function Page() {
   const uda = udalosti;
 
   const trendPct = model.slope >= 0 ? "up" : "down";
-  const STANDALONE = ["kvalita", "udal", "kpi", "model"];
+  const STANDALONE = ["kvalita", "udal", "kpi", "vykony", "model"];
   const naZdroji = !STANDALONE.includes(tab);
   const prepniZdroj = (key) => {
     setSrc(key);
@@ -237,7 +237,7 @@ export default function Page() {
           {[["vzniky", "🛒 Vzniky"], ["triedenie", "📦 Triedenie"], ["prijem", "📥 Príjem"], ["distribucia", "🔁 Distribúcia"]].map(([k, l]) =>
             <button key={k} className={naZdroji && src === k ? "on" : ""} onClick={() => prepniZdroj(k)}>{l}</button>)}
           <span style={{ alignSelf: "center", color: "var(--border)", padding: "0 2px", userSelect: "none" }}>│</span>
-          {[["kvalita", "✅ Kvalita"], ["udal", "📅 Udalosti"], ["kpi", "🧮 KPI"], ["model", "🧠 Model"]].map(([k, l]) =>
+          {[["kvalita", "✅ Kvalita"], ["udal", "📅 Udalosti"], ["kpi", "🧮 KPI"], ["vykony", "⚙️ Výkony"], ["model", "🧠 Model"]].map(([k, l]) =>
             <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}
         </div>
         {naZdroji && src === "distribucia" && <div className="note" style={{ marginTop: 8 }}>🔁 Distribúcia = preposielanie medzi skladmi (vrátane nočného batchu ~3:00). Objem riadi doplňovanie, nie zákaznícky dopyt – predikciu ber orientačnejšie než pri zákazníckych vznikoch.</div>}
@@ -261,6 +261,7 @@ export default function Page() {
       {tab === "udal" && <TabUdalosti D={V} uda={uda} setUdalosti={setUdalosti} save={save} />}
       {tab === "kvalita" && <TabKvalita staticData={staticData} />}
       {tab === "kpi" && <TabKPI TP={TP} uda={uda} pomery={staticData.pomery} kpi={kpi} setKpi={setKpi} save={save} backlogy={backlogy} />}
+      {tab === "vykony" && <TabVykony kpi={kpi} setKpi={setKpi} save={save} />}
       {tab === "model" && <TabModel sources={{ vzniky: { ...V, vynD: vynimky.map((v) => v.datum) }, triedenie: TP.triedenie, prijem: TP.prijem, distribucia: TP.distribucia }} vynD={vynimky.map((v) => v.datum)} uda={uda} />}
 
       {toast && <div className={`toast ${toast.err ? "err" : ""}`}>{toast.msg}</div>}
@@ -1001,17 +1002,75 @@ function TabKvalita({ staticData }) {
   );
 }
 
+// ------------------------------------------------------------ ⚙️ Výkony
+function TabVykony({ kpi, setKpi, save }) {
+  const PROCESY = ["Príjem", "Pick", "Pack", "Sort"];
+  const COLS = ["proces", "vykon", "datum"];
+  const [glob, setGlob] = useState(null);
+  const globVal = Object.fromEntries(PROCESY.map((p) => {
+    const r = kpi.find((k) => k.proces === p && !k.datum);
+    return [p, r ? String(r.vykon) : ""];
+  }));
+  const ulozene = (p) => { const r = kpi.find((k) => k.proces === p && !k.datum); return r ? +r.vykon : null; };
+  const zmenene = PROCESY.some((p) => String(ulozene(p) ?? "") !== globVal[p]);
+  const uloz = () => {
+    const rows = [
+      ...PROCESY.filter((p) => globVal[p] !== "").map((p) => ({ proces: p, vykon: globVal[p], datum: "" })),
+      ...kpi.filter((k) => k.datum), // denné úpravy zachovaj
+    ];
+    save("kpi.csv", rows, COLS, "data: plošné výkony procesov", setKpi);
+  };
+  const denne = kpi.filter((k) => k.datum && +k.vykon > 0).sort((a, b) => (a.datum < b.datum ? 1 : -1));
+  const inp = { width: 110, background: "#0d1117", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 9px", fontFamily: "var(--mono)" };
+
+  return (
+    <>
+      <p className="note">Plošné výkony (JBL na osobu a hodinu) platia pre <b>všetky dni</b> – používa ich Predikcia (hodiny na spracovanie), KPI aj backlog. Úpravy pre konkrétne dni sa spravujú v záložke 🧮 KPI a majú pred plošnými prednosť.</p>
+      <table className="t" style={{ maxWidth: 560 }}>
+        <thead><tr><th>Proces</th><th>Aktuálne uložené</th><th>Nová hodnota</th></tr></thead>
+        <tbody>
+          {PROCESY.map((p) => (
+            <tr key={p}>
+              <td style={{ fontFamily: "var(--sans)", fontWeight: 600 }}>{p}</td>
+              <td className={ulozene(p) ? "accent" : ""} style={{ fontWeight: 650 }}>{ulozene(p) ?? <span className="pill red">nenastavené</span>}</td>
+              <td><input type="number" min="0" placeholder="zadaj" style={inp} value={globVal[p]}
+                onChange={(e) => setGlob({ ...globVal, [p]: e.target.value })} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="frm" style={{ marginTop: 10 }}>
+        <button className="btn" disabled={!zmenene} onClick={uloz}>💾 Uložiť plošné výkony</button>
+        {zmenene && <span className="note" style={{ alignSelf: "center" }}>neuložené zmeny</span>}
+      </div>
+
+      <div className="section">
+        <h3>Denné úpravy výkonov ({denne.length})</h3>
+        {denne.length ? (
+          <table className="t" style={{ maxWidth: 560 }}>
+            <thead><tr><th>Deň</th><th>Proces</th><th>Výkon</th></tr></thead>
+            <tbody>{denne.map((k, i) => (
+              <tr key={i}><td>{fmtD(k.datum)}{k.datum.slice(0, 4)} {DNI[dow(k.datum)]}</td>
+                <td style={{ fontFamily: "var(--sans)" }}>{k.proces}</td><td className="warn" style={{ fontWeight: 650 }}>{k.vykon}</td></tr>
+            ))}</tbody>
+          </table>
+        ) : <p className="note">Žiadne – všetky dni idú podľa plošných výkonov.</p>}
+        <p className="note">Pridať alebo zmeniť dennú úpravu: záložka 🧮 KPI → stĺpec „Úprava pre deň“.</p>
+      </div>
+    </>
+  );
+}
+
 // ------------------------------------------------------------ 🧮 KPI
 function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy }) {
   const PROCESY = ["Príjem", "Pick", "Pack", "Sort"];
   const [datum, setDatum] = useState(today());
-  const [glob, setGlob] = useState(null);   // plošné výkony {proces: str}
   const [denne, setDenne] = useState(null); // denné overridy {proces: str}
   const [override, setOverride] = useState({});
   const [selProc, setSelProc] = useState("Pick");
   const COLS = ["proces", "vykon", "datum"];
 
-  const globVal = glob ?? Object.fromEntries(PROCESY.map((p) => {
+  const globVal = Object.fromEntries(PROCESY.map((p) => {
     const r = kpi.find((k) => k.proces === p && !k.datum);
     return [p, r ? String(r.vykon) : ""];
   }));
@@ -1021,13 +1080,6 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy }) {
   }));
   const vykEff = (p) => (+denVal[p] > 0 ? +denVal[p] : +globVal[p] > 0 ? +globVal[p] : 0);
 
-  const ulozPlosne = () => {
-    const rows = [
-      ...PROCESY.filter((p) => globVal[p] !== "").map((p) => ({ proces: p, vykon: globVal[p], datum: "" })),
-      ...kpi.filter((k) => k.datum), // všetky denné úpravy zachovaj
-    ];
-    save("kpi.csv", rows, COLS, "data: plošné KPI výkony", setKpi);
-  };
   const ulozDen = () => {
     const rows = [
       ...kpi.filter((k) => !k.datum || k.datum !== datum), // plošné + ostatné dni zachovaj
@@ -1060,14 +1112,13 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy }) {
   return (
     <>
       <p className="note">
-        <b>Plošné výkony</b> platia vždy; <b>denná úprava</b> ich pre vybraný deň prepíše (napr. zaučanie, oslabená zmena).
+        Plošné výkony sa nastavujú v záložke <b>⚙️ Výkony</b>; tu sa zobrazujú a dá sa pridať <b>denná úprava</b>, ktorá ich pre vybraný deň prepíše (zaučanie, oslabená zmena…).
         Človekohodiny = objem ÷ efektívny výkon. Objemy sa predvypĺňajú z modelu a dajú sa prepísať.
       </p>
       <div className="frm" style={{ marginBottom: 12 }}>
         <div className="fld"><label>Prevádzkový deň</label>
           <input type="date" value={datum} onChange={(e) => { setDatum(e.target.value); setDenne(null); setOverride({}); }} /></div>
-        <button className="btn" onClick={ulozPlosne}>💾 Uložiť plošné (platia pre všetky dni)</button>
-        <button className="btn ghost" onClick={ulozDen}>💾 Uložiť úpravu dňa {fmtD(datum)}</button>
+        <button className="btn" onClick={ulozDen}>💾 Uložiť úpravu dňa {fmtD(datum)}</button>
       </div>
 
       {blNaDen.length > 0 && (
@@ -1076,13 +1127,12 @@ function TabKPI({ TP, uda, pomery, kpi, setKpi, save, backlogy }) {
         </p>
       )}
       <table className="t">
-        <thead><tr><th>Proces</th><th>Plošný výkon</th><th>Úprava pre {fmtD(datum)}</th><th>Efektívny</th><th>Objem (JBL)</th><th>Človekohodiny</th></tr></thead>
+        <thead><tr><th>Proces</th><th>Plošný (⚙️)</th><th>Úprava pre {fmtD(datum)}</th><th>Efektívny</th><th>Objem (JBL)</th><th>Človekohodiny</th></tr></thead>
         <tbody>
           {PROCESY.map((p) => (
             <tr key={p}>
               <td style={{ fontFamily: "var(--sans)" }}>{p}{p !== "Príjem" && pomery[p] && pomery[p] !== 1 ? ` (×${pomery[p].toFixed(2)})` : ""}</td>
-              <td><input type="number" min="0" placeholder="zadaj" style={inp} value={globVal[p]}
-                onChange={(e) => setGlob({ ...globVal, [p]: e.target.value })} /></td>
+              <td className={+globVal[p] > 0 ? "accent" : ""} style={{ fontWeight: 650 }}>{+globVal[p] > 0 ? globVal[p] : <span className="pill gray">v ⚙️ Výkony</span>}</td>
               <td><input type="number" min="0" placeholder="–" style={{ ...inp, borderColor: denVal[p] !== "" ? "var(--amber)" : "var(--border)" }} value={denVal[p]}
                 onChange={(e) => setDenne({ ...denVal, [p]: e.target.value })} /></td>
               <td className={denVal[p] !== "" ? "warn" : ""} style={{ fontWeight: 650 }}>{vykEff(p) || "–"}</td>
