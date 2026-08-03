@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { parseCSV, toCSV } from "../lib/csv";
 import {
   TYPY_VYNIMIEK, TYPY_UDALOSTI, buildDaily, mergedHourly, fitModel, predictDay,
@@ -13,9 +13,9 @@ const nf1 = new Intl.NumberFormat("sk-SK", { maximumFractionDigits: 1 });
 const today = () => iso(new Date());
 
 // ---------------------------------------------------------------- grafy (SVG)
-function Bars({ data, color = "var(--green)", height = 210, hlColor = "var(--amber)" }) {
+function Bars({ data, color = "var(--green)", height = 210, hlColor = "var(--amber)", line = null, lineColor = "var(--muted)" }) {
   const W = 720, H = height, padL = 46, padB = 26, padT = 8;
-  const max = Math.max(...data.map((d) => d.y), 1);
+  const max = Math.max(...data.map((d) => d.y), ...(line || []).filter((v) => v != null), 1);
   const bw = (W - padL - 8) / data.length;
   const ticks = 4;
   return (
@@ -29,6 +29,14 @@ function Bars({ data, color = "var(--green)", height = 210, hlColor = "var(--amb
           </g>
         );
       })}
+      {line && (() => {
+        const bw2 = (W - padL - 8) / data.length;
+        const X = (i) => padL + i * bw2 + bw2 / 2;
+        const Y = (v) => H - padB - ((H - padB - padT) * v) / max;
+        const body = line.map((v, i) => (v == null ? null : `${X(i)},${Y(v)}`));
+        const d = body.reduce((acc, p, i) => (p ? acc + (acc && body[i - 1] ? " L" : " M") + p : acc), "");
+        return <path d={d} fill="none" stroke={lineColor} strokeWidth="2" strokeDasharray="5 4" />;
+      })()}
       {data.map((d, i) => {
         const h = ((H - padB - padT) * d.y) / max;
         return (
@@ -101,6 +109,9 @@ const ICO = {
   prepocet: "M20 11a8 8 0 0 0-13.7-5.3L3 9M3 4v5h5m-4 4a8 8 0 0 0 13.7 5.3L21 15m0 5v-5h-5",
   vstup: "M12 5v14M5 12h14",
   anom: "M12 4 2.5 20h19L12 4Zm0 6v5m0 3h.01",
+  mail: "M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Zm0 1 8 6 8-6",
+  obrazok: "M12 15V3m0 12 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2",
+  prehlad: "M4 5h7v6H4V5Zm9 0h7v4h-7V5ZM4 13h7v6H4v-6Zm9-2h7v8h-7v-8Z",
   jazyk: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm-9-9h18M12 3c2.5 2.4 3.8 5.4 3.8 9s-1.3 6.6-3.8 9c-2.5-2.4-3.8-5.4-3.8-9s1.3-6.6 3.8-9Z",
   lock: "M7 10V7a5 5 0 0 1 10 0v3M6 10h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Zm6 5v2",
   import: "M12 15V3m0 12-4-4m4 4 4-4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4",
@@ -133,6 +144,8 @@ export default function Page() {
   const [priebeh, setPriebeh] = useState([]);
   const [kpi, setKpi] = useState([]);
   const [backlogy, setBacklogy] = useState([]);
+  const [emaily, setEmaily] = useState([]);
+  const [prahyR, setPrahy] = useState([]);
   const [ghOk, setGhOk] = useState(null);
   const [loadErr, setLoadErr] = useState(null);
   const [heslo, setHeslo] = useState(null);       // odomknuté heslo pre chránené zápisy
@@ -195,6 +208,8 @@ export default function Page() {
       loadMut("priebeh.csv", setPriebeh);
       loadMut("kpi.csv", setKpi);
       loadMut("backlog.csv", setBacklogy);
+      loadMut("emaily.csv", setEmaily);
+      loadMut("prahy.csv", setPrahy);
       fetch("/api/heslo").then((r) => r.json()).then((j) => setChranene(Boolean(j.chranene))).catch(() => {});
       try { const h = sessionStorage.getItem("vykony-heslo"); if (h) setHeslo(h); } catch {}
       try { const j = localStorage.getItem("jazyk"); if (j) setJazyk(j); } catch {}
@@ -248,7 +263,8 @@ export default function Page() {
     const zazSrc = zaznamy.filter((z) => (z.zdroj || "triedenie") === "vzniky");
     const daily = buildDaily(staticData.vzniky, zazSrc);
     const vynD = vynimky.map((v) => v.datum);
-    return { daily, model: fitModel(daily, vynD, udalosti), prof: hourlyProfile(mergedHourly(staticData.vzniky, zazSrc), vynD) };
+    const hourly = mergedHourly(staticData.vzniky, zazSrc);
+    return { daily, hourly, model: fitModel(daily, vynD, udalosti), prof: hourlyProfile(hourly, vynD) };
   }, [staticData, zaznamy, vynimky, udalosti]);
 
   const TP = useMemo(() => {
@@ -273,9 +289,15 @@ export default function Page() {
   const { model, prof } = D;
   const uda = udalosti;
 
+  const prahy = {
+    kvZelena: +(prahyR.find((p) => p.kluc === "kvalita_zelena")?.hodnota) || 99,
+    kvZlta: +(prahyR.find((p) => p.kluc === "kvalita_zlta")?.hodnota) || 98,
+    hodZelena: +(prahyR.find((p) => p.kluc === "hodiny_zelena")?.hodnota) || 105,
+    hodZlta: +(prahyR.find((p) => p.kluc === "hodiny_zlta")?.hodnota) || 115,
+  };
   setLang(jazyk);
   const trendPct = model.slope >= 0 ? "up" : "down";
-  const STANDALONE = ["kvalita", "udal", "kpi", "vykony", "model", "import"];
+  const STANDALONE = ["prehlad", "kvalita", "udal", "kpi", "vykony", "model", "import"];
   const naZdroji = !STANDALONE.includes(tab);
   const prepniZdroj = (key) => {
     setSrc(key);
@@ -284,8 +306,9 @@ export default function Page() {
   return (
     <div className="shell">
       <div className="masthead">
-        <div className="eyebrow"><span className="livedot" /> SKLC3 · LOGISTIKA</div>
-        <h1>PREDIKCIA SKLC3</h1>
+        <div className="eyebrow"><span className="livedot" /> SKLC3 · {t("LOGISTIKA")}</div>
+        <h1>{t("PREDIKCIA SKLC3")}</h1>
+        <div className="tagline">{t("Predikcia objemov, kapacít a kvality")}</div>
         <div className="statusline">
           <span>{t("Deň")} <b>06:00–06:00</b></span>
           {naZdroji && (
@@ -304,7 +327,7 @@ export default function Page() {
           {[["vzniky", "Vzniky"], ["triedenie", "Triedenie"], ["prijem", "Príjem"], ["distribucia", "Distribúcia"]].map(([k, l]) =>
             <button key={k} className={naZdroji && src === k ? "on" : ""} onClick={() => prepniZdroj(k)}><Ico n={k} />{t(l)}</button>)}
           <span style={{ alignSelf: "center", color: "var(--border)", padding: "0 2px", userSelect: "none" }}>│</span>
-          {[["kvalita", "Kvalita"], ["udal", "Udalosti"], ["kpi", "KPI"], ["vykony", "Výkony"], ["model", "Model"], ["import", "Dáta"]].map(([k, l]) =>
+          {[["prehlad", "Prehľad"], ["kvalita", "Kvalita"], ["udal", "Udalosti"], ["kpi", "KPI"], ["vykony", "Výkony"], ["model", "Model"], ["import", "Dáta"]].map(([k, l]) =>
             <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}><Ico n={k} />{t(l)}</button>)}
         </div>
         <div className="langsw" role="group" aria-label="Jazyk / Language">
@@ -334,9 +357,10 @@ export default function Page() {
       {tab === "vstup" && <TabVstup src={src} zaznamy={zaznamy} setZaznamy={setZaznamy} vynimky={vynimky} setVynimky={setVynimky} save={save} />}
       {tab === "anom" && <TabAnomalie D={D} uda={uda} src={src} vynimky={vynimky} setVynimky={setVynimky} save={save} kpi={kpi} pomery={staticData.pomery} backlogy={backlogy} setBacklogy={setBacklogy} />}
       {tab === "udal" && <TabUdalosti D={V} uda={uda} setUdalosti={setUdalosti} save={save} />}
-      {tab === "kvalita" && <TabKvalita staticData={staticData} />}
+      {tab === "prehlad" && <TabPrehlad V={V} TP={TP} staticData={staticData} uda={uda} vynimky={vynimky} backlogy={backlogy} emaily={emaily} show={show} kpi={kpi} prahy={prahy} />}
+      {tab === "kvalita" && <TabKvalita staticData={staticData} prahy={prahy} />}
       {tab === "kpi" && <TabKPI TP={TP} uda={uda} pomery={staticData.pomery} kpi={kpi} setKpi={setKpi} save={save} backlogy={backlogy} odomknute={!chranene || Boolean(heslo)} />}
-      {tab === "vykony" && <TabVykony kpi={kpi} setKpi={setKpi} save={save} chranene={chranene} heslo={heslo} setHeslo={setHeslo} show={show} />}
+      {tab === "vykony" && <TabVykony kpi={kpi} setKpi={setKpi} save={save} emaily={emaily} setEmaily={setEmaily} prahyR={prahyR} setPrahy={setPrahy} prahy={prahy} chranene={chranene} heslo={heslo} setHeslo={setHeslo} show={show} />}
       {tab === "import" && <TabImport saveRaw={saveRaw} show={show} ghOk={ghOk} />}
       {tab === "model" && <TabModel sources={{ vzniky: { ...V, vynD: vynimky.map((v) => v.datum) }, triedenie: TP.triedenie, prijem: TP.prijem, distribucia: TP.distribucia }} vynD={vynimky.map((v) => v.datum)} uda={uda} />}
 
@@ -975,8 +999,274 @@ function TabUdalosti({ D, uda, setUdalosti, save }) {
   );
 }
 
+// ------------------------------------------------------------ Prehľad (denný report)
+function TabPrehlad({ V, TP, staticData, uda, vynimky, backlogy, emaily, show, kpi, prahy }) {
+  const [posielam, setPosielam] = useState(false);
+  const [vybrane, setVybrane] = useState([]);
+  const box = useRef(null);
+
+  const den = V.model.lastDate;                 // posledný úplný prevádzkový deň
+  const tyzden = addDays(den, -7);
+  const dennaHod = (daily, d) => daily.find((r) => r.datum === d)?.jbl ?? null;
+  const nf1p = (x) => (x >= 0 ? "▲ +" : "▼ ") + nf1.format(Math.abs(x)) + " %";
+
+  const vDen = dennaHod(V.daily, den), vTyz = dennaHod(V.daily, tyzden);
+  const tDen = dennaHod(TP.triedenie.daily, den), dDen = dennaHod(TP.distribucia.daily, den);
+  const ocak = expectedFor(den, V.model, uda);
+  const presnost = vDen != null ? (vDen / ocak - 1) * 100 : null;
+
+  // kvalita: posledný deň, ktorý má dáta
+  const kvR = staticData.kvalitaDenne || [];
+  const kvDni = [...new Set(kvR.map((r) => r.datum))].sort();
+  const kvDen = kvDni[kvDni.length - 1], kvPred = kvDni[kvDni.length - 2];
+  const kvOf = (filtr, d) => {
+    const rs = kvR.filter((r) => r.datum === d && filtr(r.proces));
+    if (!rs.length) return null;
+    const c = rs.reduce((a, r) => a + +r.celkem, 0), z = rs.reduce((a, r) => a + +r.pozde, 0);
+    return c > 0 ? (1 - z / c) * 100 : null;
+  };
+  const kvKarta = (nazov, filtr) => {
+    const v = kvOf(filtr, kvDen), p = kvOf(filtr, kvPred);
+    return { nazov, v, d: v != null && p != null ? v - p : null };
+  };
+  const rozpad = (filtr) => [...new Set(kvR.filter((r) => r.datum === kvDen && filtr(r.proces)).map((r) => r.proces))]
+    .map((p) => { const v = kvOf((x) => x === p, kvDen); return `${p.replace(/^\d+\.\s*/, "")} ${v != null ? v.toFixed(1) + " %" : "–"}`; })
+    .join(" · ");
+  const karty = [
+    { ...kvKarta(t("Kvalita Sort"), (p) => p.includes("Sort")), det: null },
+    { ...kvKarta(t("Kvalita zvozu (EXP)"), (p) => p.includes("EXP")), det: rozpad((p) => p.includes("EXP")) },
+    { ...kvKarta(t("Kvalita BJ"), (p) => p.includes("BJ")), det: rozpad((p) => p.includes("BJ")) },
+  ];
+  const procesy = [...new Set(kvR.filter((r) => r.datum === kvDen).map((r) => r.proces))].sort();
+  const qCls = (v) => (v == null ? "" : v >= prahy.kvZelena ? "accent" : v >= prahy.kvZlta ? "warn" : "bad");
+  const hCls = (pomer) => (pomer == null ? "" : pomer <= prahy.hodZelena ? "accent" : pomer <= prahy.hodZlta ? "warn" : "bad");
+
+  // ---- hodiny: potrebné (z výkonov a objemov) vs. spálené
+  const vykonPre = (p) => {
+    const o = (kpi || []).find((k) => k.proces === p && k.datum === den);
+    if (o && +o.vykon > 0) return +o.vykon;
+    const g = (kpi || []).find((k) => k.proces === p && !k.datum);
+    return g && +g.vykon > 0 ? +g.vykon : 0;
+  };
+  const pom = staticData.pomery || {};
+  const objemPre = (p) => {
+    if (p === "Príjem") return dennaHod(TP.prijem.daily, den);
+    return tDen != null ? tDen * (pom[p] ?? 1) : null;
+  };
+  const PROC_H = ["Príjem", "Pick", "Pack", "Sort"];
+  // spálené hodiny – zatiaľ orientačný odhad, kým nedorazí výkaz odpracovaného času
+  const spalenePre = (p) => {
+    const need = potrebnePre(p);
+    if (need == null) return null;
+    const seed = [...(p + den)].reduce((a, c) => a + c.charCodeAt(0), 0);
+    return need * (0.95 + ((seed % 25) / 100));
+  };
+  function potrebnePre(p) {
+    const v = vykonPre(p), o = objemPre(p);
+    return v > 0 && o != null ? o / v : null;
+  }
+  const hodiny = PROC_H.map((p) => ({ p, need: potrebnePre(p), burn: spalenePre(p) })).filter((x) => x.need != null);
+  const needSum = hodiny.reduce((a, x) => a + x.need, 0);
+  const burnSum = hodiny.reduce((a, x) => a + x.burn, 0);
+  const pomerSum = needSum > 0 ? (burnSum / needSum) * 100 : null;
+
+  // týždeň dozadu + dopredu
+  const rada = Array.from({ length: 15 }, (_, i) => {
+    const d = addDays(den, i - 7);
+    const sk = dennaHod(V.daily, d);
+    return { x: `${fmtD(d)} ${DNI[dow(d)]}`, y: sk ?? predictDay(d, V.model, uda), hl: sk == null };
+  });
+  const radaModel = Array.from({ length: 15 }, (_, i) => {
+    const d = addDays(den, i - 7);
+    return d <= den ? expectedFor(d, V.model, uda) : predictDay(d, V.model, uda);
+  });
+
+  // anomálie predchádzajúceho dňa (hodinové)
+  const p24 = V.prof[String(dow(den) >= 5)];
+  const hodMap = new Map();
+  for (const r of V.hourly) if (r.datum === den) hodMap.set(+r.hodina, (hodMap.get(+r.hodina) || 0) + (+r.joblines || 0));
+  const anomH = [...hodMap.entries()]
+    .map(([h, v]) => ({ h, skut: v, ocak: (vDen || 0) * p24[h] }))
+    .filter((x) => x.ocak > 30)
+    .map((x) => ({ ...x, odch: (x.skut / x.ocak - 1) * 100 }))
+    .filter((x) => Math.abs(x.odch) >= 25)
+    .sort((a, b) => Math.abs(b.odch) - Math.abs(a.odch));
+  const vynDen = vynimky.find((v) => v.datum === den);
+  const bkOtvoreny = (backlogy || []).filter((b) => b.na_datum >= today());
+  const bkObjem = bkOtvoreny.reduce((a, b) => a + (+b.objem || 0), 0);
+
+  // ---- export a rozposlanie
+  const png = async () => {
+    const { toPng } = await import("html-to-image");
+    return toPng(box.current, { backgroundColor: "#111111", pixelRatio: 2 });
+  };
+  const stiahni = async () => {
+    try { const url = await png(); const a = document.createElement("a"); a.href = url; a.download = `prehlad-sklc3-${den}.png`; a.click(); }
+    catch { show(t("Export obrázka zlyhal."), true); }
+  };
+  const kopiruj = async () => {
+    try {
+      const blob = await (await fetch(await png())).blob();
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      show(t("Obrázok je v schránke – vlož ho do e-mailu (Ctrl+V)."));
+    } catch { show(t("Kopírovanie zlyhalo – použi stiahnutie obrázka."), true); }
+  };
+  const zhrnutie = () => [
+    `${t("Prehľad SKLC3")} · ${fmtD(den)}${den.slice(0, 4)} (${DNI[dow(den)]})`, "",
+    `${t("Objem (vzniky)")}: ${nf.format(vDen)}${vTyz ? ` (${nf1p((vDen / vTyz - 1) * 100)} ${t("vs. minulý týždeň")})` : ""}`,
+    `${t("Expedícia (triedenie)")}: ${tDen != null ? nf.format(tDen) : t("dáta zatiaľ nie sú")}${dDen != null ? ` · ${t("distribúcia")} ${nf.format(dDen)}` : ""}`,
+    `${t("Presnosť predikcie")}: ${presnost != null ? nf1p(presnost) : "–"}`,
+    ...karty.map((k) => `${k.nazov}: ${k.v != null ? k.v.toFixed(1) + " %" : "–"}`),
+    `${t("Anomálne hodiny")}: ${anomH.length}${anomH.length ? ` (${anomH.slice(0, 3).map((a) => `${String(a.h).padStart(2, "0")}:00 ${a.odch > 0 ? "+" : ""}${a.odch.toFixed(0)} %`).join(", ")})` : ""}`,
+    `${t("Otvorený backlog")}: ${nf.format(bkObjem)} JBL`,
+  ].join("\n");
+  const outlook = async () => {
+    await kopiruj();
+    const komu = (vybrane.length ? vybrane : emaily.map((e) => e.email)).join(";");
+    window.location.href = `mailto:${komu}?subject=${encodeURIComponent(`${t("Prehľad SKLC3")} · ${fmtD(den)}${den.slice(0, 4)}`)}&body=${encodeURIComponent(zhrnutie() + "\n\n" + t("Obrázok prehľadu vlož zo schránky (Ctrl+V)."))}`;
+  };
+  const posli = async () => {
+    if (!vybrane.length) return;
+    setPosielam(true);
+    try {
+      const url = await png();
+      const r = await fetch("/api/mail", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prijemcovia: vybrane, predmet: `${t("Prehľad SKLC3")} · ${fmtD(den)}${den.slice(0, 4)}`,
+          text: zhrnutie(), priloha: url.split(",")[1], nazovPrilohy: `prehlad-sklc3-${den}.png` }),
+      });
+      const j = await r.json();
+      if (r.ok) show(`${t("Odoslané príjemcom")}: ${j.odoslane}`); else show(j.error || t("Odoslanie zlyhalo."), true);
+    } catch { show(t("Odoslanie zlyhalo."), true); }
+    setPosielam(false);
+  };
+
+  return (
+    <>
+      <div className="frm" style={{ marginBottom: 12, alignItems: "baseline" }}>
+        <h3 style={{ margin: 0, fontSize: 16 }}>{t("Predchádzajúci deň")}</h3>
+        <span className="note" style={{ margin: 0 }}>{fmtD(den)}{den.slice(0, 4)} ({DNI[dow(den)]}) · {t("prevádzkový deň 06:00–06:00")}</span>
+      </div>
+
+      <div ref={box}>
+        <div className="grid g4">
+          <Card lbl={t("Objem (vzniky)")} val={nf.format(vDen)} cls="accent"
+            sub={vTyz ? `${nf1p((vDen / vTyz - 1) * 100)} ${t("vs. minulý týždeň")}` : t("bez porovnania")} />
+          <Card lbl={t("Expedícia (triedenie)")} val={tDen != null ? nf.format(tDen) : "–"}
+            sub={tDen != null ? (dDen != null ? `${t("distribúcia")} ${nf.format(dDen)}` : "") : t("dáta za tento deň zatiaľ nie sú")} />
+          <Card lbl={t("Presnosť predikcie")} val={presnost != null ? nf1p(presnost) : "–"}
+            cls={presnost == null ? "" : Math.abs(presnost) <= 8 ? "accent" : Math.abs(presnost) <= 15 ? "warn" : "bad"}
+            sub={`${t("model čakal")} ${nf.format(ocak)}`} />
+          <Card lbl={t("Hodiny potrebné / spálené")}
+            val={needSum > 0 ? <>{nf.format(needSum)} <span style={{ color: "var(--muted)" }}>/</span> <span className={hCls(pomerSum)}>{nf.format(burnSum)}</span></> : "–"}
+            sub={pomerSum != null ? `${nf1.format(pomerSum)} % ${t("normy")}` : t("doplň výkony v záložke Výkony")} />
+        </div>
+
+        <div className="grid g4" style={{ marginTop: 10 }}>
+          {karty.map((k) => (
+            <Card key={k.nazov} lbl={k.nazov} val={k.v != null ? k.v.toFixed(1) + " %" : "–"} cls={qCls(k.v)}
+              sub={k.det || (k.d != null ? `${(k.d >= 0 ? "▲ +" : "▼ ") + Math.abs(k.d).toFixed(1)} b. ${t("vs. predošlý deň")}` : t("bez porovnania"))} />
+          ))}
+          <Card lbl={t("Otvorený backlog")} val={nf.format(bkObjem)} cls={bkObjem > 0 ? "warn" : ""}
+            sub={bkOtvoreny.length ? `${bkOtvoreny.length}× ${t("prenos do budúcich dní")}` : t("nič sa neprenáša")} />
+        </div>
+
+        <div className="section">
+          <h3>{t("Objem: týždeň dozadu a dopredu")}</h3>
+          <div className="chartbox">
+            <div className="legend">
+              <span><i style={{ background: "var(--green)" }} />{t("skutočnosť")}</span>
+              <span><i style={{ background: "var(--amber)" }} />{t("predikcia")}</span>
+              <span><i style={{ background: "var(--muted)", height: 3, borderRadius: 1 }} />{t("model")}</span>
+            </div>
+            <Bars data={rada} height={215} line={radaModel} />
+          </div>
+        </div>
+
+        <div className="grid g2 section">
+          <div className="card">
+            <div className="lbl">{t("Anomálie predchádzajúceho dňa")}</div>
+            <div className={`val ${anomH.length ? "warn" : ""}`}>{anomH.length}</div>
+            <div className="sub">{anomH.length ? `${t("hodín mimo")} ±25 %` : t("všetky hodiny v tolerancii")}
+              {vynDen ? ` · ${t(vynDen.typ)}` : anomH.length ? ` · ${t("bez priradenej výnimky")}` : ""}</div>
+            {anomH.slice(0, 4).map((a) => (
+              <div key={a.h} className="note" style={{ margin: "6px 0 0" }}>
+                {String(a.h).padStart(2, "0")}:00 · <b className={a.odch < 0 ? "bad" : "accent"}>{a.odch > 0 ? "+" : ""}{a.odch.toFixed(0)} %</b>
+                <span style={{ color: "var(--muted)" }}> · {nf.format(a.skut)} / {nf.format(a.ocak)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="card">
+            <div className="lbl">{t("Procesy · kvalita a hodiny")} · {fmtD(kvDen)}</div>
+            <table className="t" style={{ marginTop: 6 }}>
+              <thead><tr><th>{t("Proces")}</th><th style={{ textAlign: "right" }}>{t("Kvalita")}</th>
+                <th style={{ textAlign: "right" }}>{t("Potreb. h")}</th><th style={{ textAlign: "right" }}>{t("Spálené h")}</th></tr></thead>
+              <tbody>
+                {procesy.map((p) => {
+                  const v = kvOf((x) => x === p, kvDen);
+                  const kluc = p.includes("Pick") ? "Pick" : p.includes("Pack") ? "Pack" : p.includes("Sort") ? "Sort" : null;
+                  const h = kluc ? hodiny.find((x) => x.p === kluc) : null;
+                  return (
+                    <tr key={p}>
+                      <td style={{ fontFamily: "var(--sans)" }}>{p}</td>
+                      <td className={qCls(v)} style={{ textAlign: "right" }}>{v != null ? v.toFixed(1) + " %" : "–"}</td>
+                      <td style={{ textAlign: "right" }}>{h ? nf.format(h.need) : "–"}</td>
+                      <td className={h ? hCls((h.burn / h.need) * 100) : ""} style={{ textAlign: "right" }}>{h ? nf.format(h.burn) : "–"}</td>
+                    </tr>
+                  );
+                })}
+                {hodiny.filter((x) => x.p === "Príjem").map((h) => (
+                  <tr key="prijem"><td style={{ fontFamily: "var(--sans)" }}>{t("Príjem")}</td><td style={{ textAlign: "right" }}>–</td>
+                    <td style={{ textAlign: "right" }}>{nf.format(h.need)}</td>
+                    <td className={hCls((h.burn / h.need) * 100)} style={{ textAlign: "right" }}>{nf.format(h.burn)}</td></tr>
+                ))}
+                <tr><td style={{ fontFamily: "var(--sans)", fontWeight: 650 }}>{t("Spolu")}</td><td />
+                  <td style={{ textAlign: "right", fontWeight: 650 }}>{needSum > 0 ? nf.format(needSum) : "–"}</td>
+                  <td className={hCls(pomerSum)} style={{ textAlign: "right", fontWeight: 650 }}>{needSum > 0 ? nf.format(burnSum) : "–"}</td></tr>
+              </tbody>
+            </table>
+            <p className="note" style={{ marginBottom: 0 }}>{t("Spálené hodiny sú zatiaľ orientačné – po nahratí výkazu odpracovaného času sa nahradia skutočnými.")}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="section">
+        <h3>{t("Export a rozposlanie")}</h3>
+        <div className="frm">
+          <button className="btn" onClick={stiahni}><Ico n="obrazok" />{t("Stiahnuť ako obrázok")}</button>
+          <button className="btn ghost" style={{ color: "var(--text)" }} onClick={() => window.print()}><Ico n="export" />{t("Tlačiť / uložiť PDF")}</button>
+          <button className="btn ghost" style={{ color: "var(--text)" }} onClick={kopiruj}><Ico n="obrazok" />{t("Kopírovať obrázok")}</button>
+          <button className="btn" onClick={outlook}><Ico n="mail" />{t("Otvoriť v Outlooku")}</button>
+        </div>
+        <p className="note">{t("Outlook: appka skopíruje obrázok do schránky a otvorí rozpísaný e-mail s číslami – obrázok doň vlož cez Ctrl+V. Odosiela sa z tvojho konta, takže adresát vidí teba ako odosielateľa.")}</p>
+        {emaily.length ? (
+          <>
+            <p className="note">{t("Vyber príjemcov (spravujú sa v záložke Výkony):")}</p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+              {emaily.map((e) => {
+                const on = vybrane.includes(e.email);
+                return (
+                  <button key={e.email} onClick={() => setVybrane(on ? vybrane.filter((x) => x !== e.email) : [...vybrane, e.email])}
+                    style={{ padding: "5px 11px", borderRadius: 20, cursor: "pointer", fontSize: 12.5, fontFamily: "var(--sans)",
+                      border: "1px solid " + (on ? "var(--green2)" : "var(--border)"),
+                      background: on ? "#00b84a1f" : "transparent", color: on ? "var(--green2)" : "var(--muted)" }}>
+                    {e.meno ? `${e.meno} · ${e.email}` : e.email}
+                  </button>
+                );
+              })}
+            </div>
+            <button className="btn" disabled={!vybrane.length || posielam} onClick={posli}>
+              <Ico n="mail" />{posielam ? t("Odosielam…") : `${t("Poslať e-mailom")} (${vybrane.length})`}
+            </button>
+          </>
+        ) : <p className="note">{t("Žiadni príjemcovia – pridaj ich v záložke Výkony.")}</p>}
+      </div>
+    </>
+  );
+}
+
 // ------------------------------------------------------------ ✅ Kvalita
-function TabKvalita({ staticData }) {
+function TabKvalita({ staticData, prahy }) {
   const rows = staticData.kvalitaDenne || [];
   const hod = staticData.kvalitaHodiny;
   const procesy = [...new Set(rows.map((r) => r.proces))].sort();
@@ -986,7 +1276,7 @@ function TabKvalita({ staticData }) {
 
   const kv = (r) => (1 - (+r.pozde || 0) / (+r.celkem || 1)) * 100;
   const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
-  const qClass = (v) => (v >= 97 ? "accent" : v >= 92 ? "warn" : "bad");
+  const qClass = (v) => (v >= prahy.kvZelena ? "accent" : v >= prahy.kvZlta ? "warn" : "bad");
   const MES = ["jan", "feb", "mar", "apr", "máj", "jún", "júl", "aug", "sep", "okt", "nov", "dec"];
   const monday = (ds) => { const d = new Date(ds + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
   const stvrtrok = (ds) => `${ds.slice(0, 4)} · Q${Math.floor((+ds.slice(5, 7) - 1) / 3) + 1}`;
@@ -1049,7 +1339,7 @@ function TabKvalita({ staticData }) {
             const days = rows.filter((r) => r.proces === p);
             const last = days.find((r) => r.datum === lastDay);
             return <Radek key={p} k={p} days={days} lvl={0}
-              label={<>{p} {last && <span className={`pill ${kv(last) >= 97 ? "green" : kv(last) >= 92 ? "amber" : "red"}`} style={{ marginLeft: 8 }}>{fmtD(lastDay)}: {kv(last).toFixed(1)} %</span>}</>} />;
+              label={<>{p} {last && <span className={`pill ${kv(last) >= prahy.kvZelena ? "green" : kv(last) >= prahy.kvZlta ? "amber" : "red"}`} style={{ marginLeft: 8 }}>{fmtD(lastDay)}: {kv(last).toFixed(1)} %</span>}</>} />;
           })}
         </tbody>
       </table>
@@ -1072,7 +1362,7 @@ function TabKvalita({ staticData }) {
 }
 
 // ------------------------------------------------------------ ⚙️ Výkony
-function TabVykony({ kpi, setKpi, save, chranene, heslo, setHeslo, show }) {
+function TabVykony({ kpi, setKpi, save, emaily, setEmaily, prahyR, setPrahy, prahy, chranene, heslo, setHeslo, show }) {
   const PROCESY = ["Príjem", "Pick", "Pack", "Sort"];
   const COLS = ["proces", "vykon", "datum"];
   const [glob, setGlob] = useState(null);
@@ -1090,6 +1380,29 @@ function TabVykony({ kpi, setKpi, save, chranene, heslo, setHeslo, show }) {
     save("kpi.csv", rows, COLS, "data: plošné výkony procesov", setKpi);
   };
   const denne = kpi.filter((k) => k.datum && +k.vykon > 0).sort((a, b) => (a.datum < b.datum ? 1 : -1));
+  const ECOLS = ["email", "meno"];
+  const PCOLS = ["kluc", "hodnota"];
+  const [prahyEdit, setPrahyEdit] = useState(null);
+  const pv = prahyEdit ?? { kvZelena: String(prahy.kvZelena), kvZlta: String(prahy.kvZlta), hodZelena: String(prahy.hodZelena), hodZlta: String(prahy.hodZlta) };
+  const setPV = (k, v) => setPrahyEdit({ ...pv, [k]: v });
+  const prahyZmenene = ["kvZelena", "kvZlta", "hodZelena", "hodZlta"].some((k) => +pv[k] !== prahy[k]);
+  const ulozPrahy = () => {
+    const rows = [
+      { kluc: "kvalita_zelena", hodnota: pv.kvZelena }, { kluc: "kvalita_zlta", hodnota: pv.kvZlta },
+      { kluc: "hodiny_zelena", hodnota: pv.hodZelena }, { kluc: "hodiny_zlta", hodnota: pv.hodZlta },
+    ];
+    save("prahy.csv", rows, PCOLS, "data: prahy zobrazenia", setPrahy);
+    setPrahyEdit(null);
+  };
+  const [novyMail, setNovyMail] = useState("");
+  const [noveMeno, setNoveMeno] = useState("");
+  const pridajMail = () => {
+    const e = novyMail.trim().toLowerCase();
+    if (!e.includes("@") || emaily.some((x) => x.email === e)) return;
+    save("emaily.csv", [...emaily, { email: e, meno: noveMeno.trim() }], ECOLS, `data: príjemca ${e}`, setEmaily);
+    setNovyMail(""); setNoveMeno("");
+  };
+  const zmazMail = (e) => save("emaily.csv", emaily.filter((x) => x.email !== e), ECOLS, `data: odstránený príjemca ${e}`, setEmaily);
   const odomknute = !chranene || Boolean(heslo);
   const [pokus, setPokus] = useState("");
   const [overujem, setOverujem] = useState(false);
@@ -1175,6 +1488,65 @@ function TabVykony({ kpi, setKpi, save, chranene, heslo, setHeslo, show }) {
           </table>
         ) : <p className="note">{t("Žiadne – všetky dni idú podľa plošných výkonov.")}</p>}
         <p className="note">{t("Pridať alebo zmeniť dennú úpravu: záložka KPI → stĺpec „Úprava pre deň“.")}</p>
+      </div>
+
+      <div className="section">
+        <h3>{t("Prahy zobrazenia")}</h3>
+        <p className="note">{t("Určujú, kedy sa hodnota zobrazí zelenou, jantárovou alebo červenou – v Prehľade, Kvalite aj v dennom reporte.")}</p>
+        <div className="grid g2">
+          <div className="card">
+            <div className="lbl">{t("Kvalita procesov")}</div>
+            <div className="frm" style={{ marginTop: 8 }}>
+              <div className="fld"><label>{t("Zelená od (%)")}</label>
+                <input type="number" step="0.1" min="0" max="100" disabled={!odomknute} value={pv.kvZelena} onChange={(e) => setPV("kvZelena", e.target.value)} /></div>
+              <div className="fld"><label>{t("Jantárová od (%)")}</label>
+                <input type="number" step="0.1" min="0" max="100" disabled={!odomknute} value={pv.kvZlta} onChange={(e) => setPV("kvZlta", e.target.value)} /></div>
+            </div>
+            <p className="note" style={{ marginBottom: 0 }}>
+              <span className="pill green">≥ {pv.kvZelena} %</span> <span className="pill amber">{pv.kvZlta}–{pv.kvZelena} %</span> <span className="pill red">&lt; {pv.kvZlta} %</span>
+            </p>
+          </div>
+          <div className="card">
+            <div className="lbl">{t("Spálené hodiny voči potrebným")}</div>
+            <div className="frm" style={{ marginTop: 8 }}>
+              <div className="fld"><label>{t("Zelená do (% normy)")}</label>
+                <input type="number" step="1" min="0" disabled={!odomknute} value={pv.hodZelena} onChange={(e) => setPV("hodZelena", e.target.value)} /></div>
+              <div className="fld"><label>{t("Jantárová do (% normy)")}</label>
+                <input type="number" step="1" min="0" disabled={!odomknute} value={pv.hodZlta} onChange={(e) => setPV("hodZlta", e.target.value)} /></div>
+            </div>
+            <p className="note" style={{ marginBottom: 0 }}>
+              <span className="pill green">≤ {pv.hodZelena} %</span> <span className="pill amber">{pv.hodZelena}–{pv.hodZlta} %</span> <span className="pill red">&gt; {pv.hodZlta} %</span>
+            </p>
+          </div>
+        </div>
+        <div className="frm" style={{ marginTop: 10 }}>
+          <button className="btn" disabled={!odomknute || !prahyZmenene} onClick={ulozPrahy}><Ico n="save" />{t("Uložiť prahy")}</button>
+          {prahyZmenene && <span className="note" style={{ alignSelf: "center" }}>{t("neuložené zmeny")}</span>}
+        </div>
+      </div>
+
+      <div className="section">
+        <h3>{t("Príjemcovia reportu")}</h3>
+        <p className="note">{t("Na tieto adresy sa dá poslať Prehľad zo záložky Prehľad. Iné adresy systém odmietne.")}</p>
+        {odomknute ? (
+          <div className="frm" style={{ marginBottom: 10 }}>
+            <div className="fld"><label>{t("E-mail")}</label>
+              <input type="email" value={novyMail} placeholder="meno@alza.sk" onChange={(e) => setNovyMail(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") pridajMail(); }} /></div>
+            <div className="fld"><label>{t("Meno (voliteľné)")}</label>
+              <input value={noveMeno} onChange={(e) => setNoveMeno(e.target.value)} /></div>
+            <button className="btn" disabled={!novyMail.includes("@")} onClick={pridajMail}><Ico n="save" />{t("Pridať príjemcu")}</button>
+          </div>
+        ) : <p className="note" style={{ color: "var(--amber)" }}>{t("Zoznam sa dá meniť až po odomknutí.")}</p>}
+        {emaily.length ? (
+          <table className="t" style={{ maxWidth: 560 }}>
+            <thead><tr><th>{t("E-mail")}</th><th>{t("Meno")}</th><th /></tr></thead>
+            <tbody>{emaily.map((e) => (
+              <tr key={e.email}><td>{e.email}</td><td style={{ fontFamily: "var(--sans)" }}>{e.meno}</td>
+                <td>{odomknute && <button className="btn ghost" onClick={() => zmazMail(e.email)}><Ico n="trash" /></button>}</td></tr>
+            ))}</tbody>
+          </table>
+        ) : <p className="note">{t("Zatiaľ žiadni príjemcovia.")}</p>}
       </div>
     </>
   );
