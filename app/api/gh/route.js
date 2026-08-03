@@ -16,11 +16,11 @@ function ghHint(status) {
 const ALLOWED = new Set([
   "zaznamy.csv", "vynimky.csv", "udalosti.csv", "priebeh.csv", "kpi.csv", "backlog.csv",
   "vzniky_hodinove.csv", "distribucia_hodinove.csv", "baseline_hodinove.csv", "prijem_hodinove.csv",
-  "kvalita_denne.csv", "zvoz_matica.json", "procesy_pomery.json", "kvalita_hodiny.json",
+  "kvalita_denne.csv", "zvoz_matica.json", "procesy_pomery.json", "kvalita_hodiny.json", "emaily.csv", "prahy.csv",
 ]);
 
 // súbory, ktorých zápis vyžaduje heslo (env VYKONY_HESLO); bez env je ochrana vypnutá
-const CHRANENE = new Set(["kpi.csv"]);
+const CHRANENE = new Set(["kpi.csv", "emaily.csv", "prahy.csv"]);
 
 function hesloOk(req, file) {
   const ocakavane = process.env.VYKONY_HESLO;
